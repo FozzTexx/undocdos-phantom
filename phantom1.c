@@ -13,6 +13,8 @@
 #include <ctype.h>
 #include <dos.h>
 
+#pragma pack(1)
+
 typedef char Char;
 typedef uint8_t uchar;
 typedef uint32_t LONGINT;
@@ -33,10 +35,19 @@ enum {
 #define ReadOnly _A_RDONLY
 #define getintvec(x, y) y = _dos_getvect(x)
 #define setintvec(x, y) _dos_setvect(x, (void interrupt *) y)
-#define ascii2string(x, y, z) strncpy(x, y, z)
 #define swapvectors()
 #define MEMW(x, y) *((uint16_t *) MK_FP(x, y))
 #define prefixseg FP_SEG(_psp)
+
+extern __segment getCS(void);
+#pragma aux getCS = \
+    "mov ax, cs";
+extern __segment getSS(void);
+#pragma aux getSS = \
+    "mov ax, ss";
+extern __segment getSP(void);
+#pragma aux getSP = \
+    "mov ax, sp";
 
 extern uint16_t getFlags(void);
 #pragma aux getFlags =	\
@@ -194,9 +205,11 @@ typedef enum {
 
 /* A de rigeur structure for manipulators of pointers */
 
+#if 0
 typedef struct os {
   unsigned short o, s;
 } os;
+#endif
 
 typedef Char fcbfnbuf[13];
 
@@ -355,7 +368,7 @@ static uchar lmax;   /* Length of max_path */
 static uchar ifile;   /* Index to directory in max_path with file */
 static unsigned short ver;   /* full DOS version */
 static Anyptr sda;   /* pointer to the Swappable Dos Area */
-static Anyptr lol;   /* pointer to the DOS list of lists struct */
+static lol_rec far *lol;   /* pointer to the DOS list of lists struct */
 static Char h[16];
 
 
@@ -396,10 +409,10 @@ static void get_dos_vars()
     failprog("DOS Version must be 3.10 or greater");
   r.x.ax = 0x5d06;
   msdos(r);
-  sda = ptr(sr.ds, (long)r.x.si);   /* Get SDA pointer */
+  sda = ptr(sr.ds, r.x.si);   /* Get SDA pointer */
   r.x.ax = 0x5200;
   msdos(r);
-  lol = ptr((long)sr.es, (long)r.x.bx);   /* Get LoL pointer */
+  lol = ptr(sr.es, r.x.bx);   /* Get LoL pointer */
 }
 
 
@@ -471,22 +484,6 @@ Char *a;
     i++;
   return i;
 }
-
-#if 0
-/* Translate a maximum of strlim bytes of an ASCIIZ string to a Pascal string */
-static void ascii2string(src, dst, strlim)
-Anyptr src, dst;
-uchar strlim;
-{
-  long i;
-
-  *((uchar *)dst) = strlim;
-  memmove(((char *)dst + 1), src, (long)strlim);
-  i = strpos2((Char[256])dst, "\0", 1);
-  if (i != 0)
-    *(uchar *)dst = i - 1;
-}
-#endif
 
 
 /* Set up global a1 to point to the appropriate source for the file
@@ -1017,7 +1014,7 @@ static void delfil()
     return;
   }
 
-  ((os *)(&a1))->o += isrc + 1;
+  a1 += isrc + 1;
   cnvt2fcb(a1, temp_name);
   if ((file_attr & 0x1f) > 0) {
     fail(5);
@@ -1264,7 +1261,7 @@ static void ffirst()
     sa = ((sda4_rec *)sda)->srch_attr;
   }
   fa = file_attr & 0x1e;
-  ((os *)(&a2))->o += isrc + 1;
+  a2 += isrc + 1;
 
   /* First try and match volume label, if asked for */
   if ((sa == 0x8 || (boolean)(sa & 0x8) && isrc == iroot) &&
@@ -1515,13 +1512,6 @@ unsigned short _flags, _cs, _ip, _ax, _bx, _cx, _dx, _si, _di, _ds, _es, _bp_;
   isr->real_fl = r.flags;
 }
 
-extern __segment getSS(void);
-#pragma aux getSS = \
-    "mov ax, ss";
-extern __segment getSP(void);
-#pragma aux getSP = \
-    "mov ax, sp";
-
 /* This procedure sets up our ISR stub as a structure on the heap. It
    also ensures that the structure is addressed from an offset of 0 so
    that the CS overridden offsets in the ISR code line up. Finally. it
@@ -1581,57 +1571,62 @@ static void init_vars()
    that we need in order to fit the mould */
 static void set_path_entry()
 {
-  Anyptr our_cds;
-  cds3_rec *WITH;
+  cds3_rec far *our_cds;
+  uint16_t cds_size;
 
-  our_cds = ((lol_rec *)lol)->cds;
+  our_cds = lol->cds;
+  cds_size = sizeof(cds4_rec);
   if (dos_major == 3)
-    ((os *)(&our_cds))->o += sizeof(cds3_rec) * (drive_no - 1);
-  else
-    ((os *)(&our_cds))->o += sizeof(cds4_rec) * (drive_no - 1);
-  if (drive_no > ((lol_rec *)lol)->last_drive)
+    cds_size = sizeof(cds3_rec);
+  printf("CDS: 0x%08lx  size: %i\n", (uint32_t) our_cds, cds_size);
+  our_cds = MK_FP(FP_SEG(our_cds), FP_OFF(our_cds) + cds_size * (drive_no - 1));
+  printf("Last drive: %c:\n", lol->last_drive + 'A');
+  if (drive_no > lol->last_drive)
     failprog("Drive letter higher than last drive...");
 
   /* Edit the Current Directory Structure for our drive */
-  WITH = (cds3_rec *)our_cds;
-  ascii2string(WITH->curr_path, strbuf, 255);
+  _fstrncpy(strbuf, our_cds->curr_path, 255);
   _SETIO(printf("Curr path is %s\n", strbuf) >= 0, FileWriteError);
-  if ((WITH->flags & 0xc000L) != 0)
+  if ((our_cds->flags & 0xc000L) != 0)
     failprog("Drive already assigned.");
-  WITH->flags |= 0xc000L;   /* Network+Physical bits on ... */
+  our_cds->flags |= 0xc000L;   /* Network+Physical bits on ... */
   strcpy(strbuf, cds_id);
   strbuf[strlen(strbuf) - 3] = (Char)('@' + drive_no);
-  memmove(WITH->curr_path, strbuf, (long)strlen(strbuf));
-  memmove(max_path, WITH->curr_path, (long)strlen(strbuf));
-  WITH->curr_path[strlen(strbuf)] = '\0';
+  _fmemmove(our_cds->curr_path, strbuf, strlen(strbuf));
+  _fmemmove(max_path, our_cds->curr_path, strlen(strbuf));
+  our_cds->curr_path[strlen(strbuf)] = '\0';
   max_path[strlen(strbuf)] = '\0';
-  WITH->root_ofs = strlen(strbuf) - 1;
-  iroot = WITH->root_ofs;
+  our_cds->root_ofs = strlen(strbuf) - 1;
+  iroot = our_cds->root_ofs;
   lmax = iroot;
 }
 
 
-/* Use in place of Turbo's 'keep' procedure. It frees the environment
-   and keeps the size of the TSR in memory smaller than 'keep' does */
 static void tsr()
 {
-  Registers r;
-  struct SREGS sr;
+  uint16_t end;
+  void far *heap = sbrk(0);
+  uint16_t far *psp_ptr;
 
-  swapvectors();
-  r.x.ax = 0x4900;
-  sr.es = MEMW(prefixseg, 0x2c);
-  msdos(r);
-  r.x.ax = 0x3100;
-  r.x.dx = FP_SEG(sbrk(0)) - prefixseg + 1;
-  msdos(r);
+
+  end = (FP_SEG(heap) << 4) + FP_OFF(heap);
+  end -= _psp << 4;
+  end += 15;
+
+  printf("Heap: 0x%08lx  PSP: 0x%04x\n", (uint32_t) heap, _psp);
+  printf("CS: 0x%04x\n", getCS());
+  printf("Para: %04x\n", end);
+  psp_ptr = MK_FP(_psp, 0);
+  printf("Top seg: %04x\n", psp_ptr[1]);
+  _dos_keep(0, end >> 4);
 }
 
 
 static void settle_down()
 {
-  long i = 0x60;
+  int idx;
   unsigned short w = 0x80;
+  uint32_t far *ptr;
 
   /* Plug ourselves into Int 2F */
   setintvec(0x2f, isr);
@@ -1639,9 +1634,12 @@ static void settle_down()
 	 FileWriteError);
   /* Find ourselves a free interrupt to call our own. Without it, future
      invocations of Phantom will not be able to unload us. */
-  while (i <= 0x67 && *(Anyptr *)ptr(0L, i << 2) != NULL)
-    i++;
-  if (i == 0x68) {
+  for (idx = 0x60; idx < 0x67; idx++) {
+    ptr = MK_FP(0, idx << 2);
+    if (!*ptr)
+      break;
+  }
+  if (idx == 0x68) {
     _SETIO(printf("No user intrs available. PHANTOM not unloadable..\n") >= 0,
 	   FileWriteError);
     tsr();
@@ -1649,10 +1647,10 @@ static void settle_down()
   /* Have our new found interrupt point at the command line area of
      our PSP. Complete our signature record, put it into the command line,
      and go to sleep. */
-  setintvec(i, ptr(prefixseg, (long)w));
+  setintvec(idx, ptr(prefixseg, w));
   our.psp = prefixseg;
   our.drive_no = drive_no;
-  *(sig_rec *)ptr(prefixseg, (long)w) = our;
+  *(sig_rec *)ptr(prefixseg, w) = our;
   tsr();
 }
 
@@ -1663,7 +1661,8 @@ static void settle_down()
 static void do_unload()
 {
   long i = 0x67;
-  Anyptr p, cds;
+  Anyptr p;
+  uint8_t far *cds;
   Registers r;
   struct SREGS sr;
   cds3_rec *WITH;
@@ -1677,9 +1676,9 @@ static void do_unload()
     _Escape(0);
   }
   getintvec(0x2f, p);
-  if (((os *)(&p))->o != 0)
+  if (p != 0)
     failprog("2F superceded...");
-  ((os *)(&p))->o = prev_hndlr;
+  p = MK_FP(FP_SEG(p), prev_hndlr);
   setintvec(0x2f, *(Anyptr *)p);
   getintvec(i, p);
   drive_no = ((sig_rec *)p)->drive_no;
@@ -1689,11 +1688,11 @@ static void do_unload()
   if ((boolean)(getFlags() & INTR_CF))
     _SETIO(printf("Could not free main memory...\n") >= 0, FileWriteError);
   setintvec(i, NULL);
-  cds = ((lol_rec *)lol)->cds;
+  cds = lol->cds;
   if (dos_major == 3)
-    ((os *)(&cds))->o += sizeof(cds3_rec) * (drive_no - 1);
+    cds += sizeof(cds3_rec) * (drive_no - 1);
   else
-    ((os *)(&cds))->o += sizeof(cds4_rec) * (drive_no - 1);
+    cds += sizeof(cds4_rec) * (drive_no - 1);
   WITH = (cds3_rec *)cds;
   WITH->flags &= 0x3fff;
   _SETIO(printf("Drive %c: is now invalid.\n", (Char)('@' + drive_no)) >= 0,

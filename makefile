@@ -2,7 +2,7 @@ TARGET  = phantom1
 AS      = wasm -q
 ASFLAGS = -mt -bt=DOS
 CC      = wcc -q
-CFLAGS  = -bt=dos -i=/home/fozztexx/stuff/p2c-1.21alpha2/home -ms -osh $(CPPFLAGS)
+CFLAGS  = -bt=dos -ms -osh $(CPPFLAGS)
 LD	= wlink OPTION quiet
 LDFLAGS = SYSTEM dos OPTION MAP
 
