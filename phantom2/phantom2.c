@@ -450,9 +450,12 @@ char *my_hex(ulong num, int len)
 
 /* ------------------- Internal DOS calls ------------ */
 
-#if 0
+#if 1
 ulong dos_ftime(void)
 {
+  uint r_es = r.es, r_di = r.di, r_ds = r.ds;
+
+
   _asm {
     mov save_sp, sp             /* Save current stack pointer. */
       cli
@@ -463,9 +466,9 @@ ulong dos_ftime(void)
       push di                    /* Subfunction 120C destroys di */
       push ds                    /* It needs DS to be DOS's DS, for DOS 5.0 */
       push es
-      mov es, r.es
-      mov di, r.di
-      mov ds, r.ds
+      mov es, r_es
+      mov di, r_di
+      mov ds, r_ds
       int 0x2F
       xchg ax, dx
       pop es
@@ -476,58 +479,69 @@ ulong dos_ftime(void)
       mov ss, bx
       mov sp, save_sp     /* and stack pointer (which we saved). */
       sti
+      ret
       }
+
+  // Never reaches here
+  return 0;  
 }
 #else
 ulong dos_ftime(void);
 #endif
 
-#if 0
+#if 1
 void set_sft_owner(SFTREC_PTR sft)
 {
+  uint r_ds = r.ds;
+
+
   _asm {
-    push es
-      push di
-      les di, sft
-      mov save_sp, sp /* Save current stack pointer. */
-      cli
-      mov ss, dos_ss         /* Establish DOS's stack, current */
-      mov sp, dos_sp             /* when we got called. */
-      sti
-      mov ax, 0x120c         /* Claim file as ours. */
-      push ds                    /* It needs DS to be DOS's DS, for DOS 5.0 */
-      mov ds, r.ds
-      int 0x2F
-      pop bx       /* Restore DS */
-      mov ds, bx                 /* Restore SS (same as DS) */
-      cli
-      mov ss, bx
-      mov sp, save_sp     /* and stack pointer (which we saved). */
-      sti
-      pop di
-      pop es
-      }
+    push es;
+    push di;
+    les di, sft;
+    mov save_sp, sp;	/* Save current stack pointer. */
+    cli;
+    mov ss, dos_ss;     /* Establish DOS's stack, current */
+    mov sp, dos_sp;     /* when we got called. */
+    sti;
+    mov ax, 0x120c;     /* Claim file as ours. */
+    push ds;            /* It needs DS to be DOS's DS, for DOS 5.0 */
+    mov ds, r_ds;
+    int 0x2F;
+    pop bx;		/* Restore DS */
+    mov ds, bx;         /* Restore SS (same as DS) */
+    cli;
+    mov ss, bx;
+    mov sp, save_sp;    /* and stack pointer (which we saved). */
+    sti;
+    pop di;
+    pop es;
+  }
 }
 #else
 void set_sft_owner(SFTREC_PTR sft);
 #endif
 
-#if 0
+#if 1
 // Does fcbname_ptr point to a device name?
 int is_a_character_device(uint dos_ds)
 {
   _asm {
-    mov ax, 0x1223              /* Search for device name. */
-      push ds                    /* It needs DS to be DOS's DS, for DOS 5.0 */
-      mov ds, dos_ds
-      int 0x2F
-      pop ds     /* Restore DS */
-      jnc is_indeed
-      }
-  return FALSE;
+    mov ax, 0x1223;              /* Search for device name. */
+    push ds;                    /* It needs DS to be DOS's DS, for DOS 5.0 */
+    mov ds, dos_ds;
+    int 0x2F;
+    pop ds;     /* Restore DS */
+    jnc is_indeed;
+    xor ax, ax;
+    ret
+  is_indeed:
+    mov ax, TRUE;
+    ret;
+  }
 
- is_indeed:
-  return TRUE;
+  // Never reaches here
+  return 0;
 }
 #else
 int is_a_character_device(uint dos_ds);
@@ -583,17 +597,21 @@ uint xms_kb_avail(void)
     push ds;
     mov ax, seg xms_entrypoint;
     mov ds, ax;
-    mov ah, 0x08 ;
+    mov ah, 0x08;
 
-    call[xms_entrypoint];
+    call [xms_entrypoint];
     pop ds;
+    ret;
   }
+
+  // Never reaches here
+  return 0;
 }
 #else
 uint xms_kb_avail(void);
 #endif
 
-#if 0
+#if 1
 /* Allocate a chunk of XMS and return a handle */
 int xms_alloc_block(uint block_size, uint *handle_ptr)
 {
@@ -604,19 +622,21 @@ int xms_alloc_block(uint block_size, uint *handle_ptr)
     push ds;
     mov ax, seg xms_entrypoint;
     mov ds, ax;
-    mov ah, 0x09 ;
+    mov ah, 0x09;
     mov dx, block_size;
 
     call[xms_entrypoint];
     pop ds;
-    cmp ax, 0x0000 ;
-    je done;
+    cmp ax, 0x0000;
+    jne done;
+    mov ax, success;
+    ret
+done:
     mov handle, dx;
   }
 
   *handle_ptr = handle;
   success = TRUE;
-done:
   return success;
 }
 #else
@@ -1306,11 +1326,11 @@ int contains_wildcards(char far *path)
   return FALSE;
 }
 
-#if 0
 /* Get DOS version, address of Swappable DOS Area, and address of
 	DOS List of lists. We only run on versions of DOS >= 3.10, so
 	fail otherwise */
 
+#if 1
 void get_dos_vars(void)
 {
   uint segmnt;
@@ -1320,28 +1340,29 @@ void get_dos_vars(void)
     failprog("Unsupported DOS Version");
 
   _asm {
-    push ds
-      push es
-      mov ax, 0x5d06     /* Get SDA pointer */
-    int 21 h
-    mov segmnt, ds
-      mov ofset, si
-      pop es
-      pop ds
-      }
+    push ds;
+    push es;
+    mov ax, 0x5d06;     /* Get SDA pointer */
+    int 0x21;
+    mov segmnt, ds;
+    mov ofset, si;
+    pop es;
+    pop ds;
+  }
 
   sda_ptr = MK_FP(segmnt, ofset);
 
   _asm {
-    push ds
-      push es
-      mov ax, 0x5200;     /* Get Lol pointer */
-    int 21 h;
-    mov segmnt, es
-      mov ofset, bx
-      pop es
-      pop ds
-      }
+    push ds;
+    push es;
+    mov ax, 0x5200;     /* Get Lol pointer */
+    int 0x21;
+    mov segmnt, es;
+    mov ofset, bx;
+    pop es;
+    pop ds;
+  }
+
   lolptr = (LOLREC_PTR) MK_FP(segmnt, ofset);
 }
 #else
@@ -1398,19 +1419,20 @@ int is_call_for_us(uint es, uint di, uint ds)
   return ret;
 }
 
-#if 0
+#if 1
 /* Check to see that we are allowed to install */
 void is_ok_to_load(void)
 {
   _asm {
     mov ax, 0x1100;
-    int 2f h;
-    cmp ax, 1
-      jne go_forward;
+    int 0x2f;
+    cmp ax, 1;
+    je fail_inst;
+    ret;
+  fail_inst:
   }
-  failprog("Not OK to install a redirector...");
 
-go_forward:
+  failprog("Not OK to install a redirector...");
   return;
 }
 #else
@@ -2205,7 +2227,7 @@ PROC dispatch_table[] = {
 
 /* -------------------------------------------------------------*/
 
-#if 0
+#if 1
 /* This is the main entry point for the redirector. It assesses if
    the call is for our drive, and if so, calls the appropriate routine. On
    return, it restores the (possibly modified) register values. */
@@ -2238,11 +2260,12 @@ void interrupt far redirector(ALL_REGS entry_regs)
 
   _asm {
     mov dos_sp, sp;
-    mov ax, ds
-      cli mov ss, ax   // New stack segment is in Data segment.
-      mov sp, offset our_stack + STACK_SIZE - 2
-      sti
-      }
+    mov ax, ds;
+    cli;
+    mov ss, ax;   // New stack segment is in Data segment.
+    mov sp, offset our_stack + STACK_SIZE - 2;
+    sti;
+  }
   
   // Expect success!
   succeed();
@@ -2281,7 +2304,7 @@ void interrupt far redirector(ALL_REGS entry_regs);
 	chain if possible, make the CDS reflect an invalid drive, and
 	free its real and XMS memory. */
 
-#if 0
+#if 1
 void unload_latest()
 {
   int i;
@@ -2367,7 +2390,7 @@ void unload_latest()
 
     // Set current PSP to resident program
     mov ah, 0x50;
-    int 21 h;
+    int 0x21;
 
     // Save SS:SP
     mov ax, seg save_ss;
@@ -2377,10 +2400,10 @@ void unload_latest()
 
     // and terminate
     mov ax, 0x4c00;
-    int 21 h;
-  }
+    int 0x21;
+  
 exit_ret:
-  _asm {
+
     // We should arrive back here - restore SS:SP
     mov ax, seg save_ss;
     mov ds, ax;
@@ -2397,7 +2420,7 @@ exit_ret:
     // Set current PSP back to us.
     mov bx, _psp;
     mov ah, 0x50;
-    int 21 h;
+    int 0x21;
   }
 
   _dos_setvect(i, NULL);
