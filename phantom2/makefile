@@ -1,4 +1,4 @@
-TARGET  = phantom1
+TARGET  = phantom2
 AS      = wasm -q
 ASFLAGS = -mt -bt=DOS
 CC      = wcc -q
@@ -11,7 +11,7 @@ all: $(TARGET).exe
 $(TARGET).exe: $(TARGET).obj
 
 .obj.exe:
-	$(LD) $(LDFLAGS) NAME $@ file {$< ../fujinet-rs232/sys/print.obj}
+	$(LD) $(LDFLAGS) NAME $@ file {$< ../../fujinet-rs232/sys/print.obj}
 .c.obj: .AUTODEPEND
 	$(CC) $(CFLAGS) -fo=$@ $<
 .asm.obj: .AUTODEPEND

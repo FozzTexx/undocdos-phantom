@@ -36,7 +36,6 @@ typedef unsigned int uint;
 typedef unsigned char uchar;
 typedef unsigned long ulong;
 
-
 /* ****************************************************
    Constants and Macros
    **************************************************** */
@@ -91,7 +90,6 @@ char *usage_string =
 
 typedef void (far *FARPROC) (void);
 
-
 #pragma pack(1)
 
 /* XMS memory copy structure */
@@ -102,7 +100,6 @@ typedef struct {
   uint dest_hndle;              /* dest handle */
   ulong dest_ofs;               /* offset in dest block */
 } XMSCOPY, *XMSCOPY_PTR;
-
 
 /* TSR signature and unload info structure */
 typedef struct {
@@ -115,7 +112,6 @@ typedef struct {
   uchar far *prev_handler;      /* Previous int 2Fh handler in the chain */
 } SIGREC, far *SIGREC_PTR;
 
-
 /* FindFirst/Next data block - ALL DOS VERSIONS */
 typedef struct {
   uchar drive_no;
@@ -125,7 +121,6 @@ typedef struct {
   uint dir_sector;
   uchar f1[4];
 } SRCHREC, far *SRCHREC_PTR;
-
 
 /* DOS System File Table entry - ALL DOS VERSIONS */
 // Some of the fields below are defined by the redirector, and differ
@@ -147,7 +142,6 @@ typedef struct {
   char file_name[11];
 } SFTREC, far *SFTREC_PTR;
 
-
 /* DOS Current directory structure - DOS VERSION 3.xx */
 typedef struct {
   char current_path[67];
@@ -155,7 +149,6 @@ typedef struct {
   uchar f1[10];
   uint root_ofs;
 } V3_CDS, far *V3_CDS_PTR;
-
 
 /* DOS Current directory structure - DOS VERSION 4.xx */
 typedef struct {
@@ -165,7 +158,6 @@ typedef struct {
   uint root_ofs;
   uchar f2[7];
 } V4_CDS, far *V4_CDS_PTR;
-
 
 /* DOS Directory entry for 'found' file - ALL DOS VERSIONS */
 typedef struct {
@@ -177,9 +169,7 @@ typedef struct {
   long file_size;
 } DIRREC, far *DIRREC_PTR;
 
-
 #define		DIRREC_PER_SECTOR			(SECTOR_SIZE / sizeof(DIRREC))
-
 
 /* Swappable DOS Area - DOS VERSION 3.xx */
 
@@ -208,7 +198,6 @@ typedef struct {
   SRCHREC rename_srchrec;
   DIRREC rename_dirrec;
 } V3_SDA, far *V3_SDA_PTR;
-
 
 /* Swappable DOS Area - DOS VERSION 4.xx */
 typedef struct {
@@ -241,7 +230,6 @@ typedef struct {
   DIRREC rename_dirrec;
 } V4_SDA, far *V4_SDA_PTR;
 
-
 /* DOS List of lists structure - DOS VERSIONS 3.1 thru 4 */
 /* We don't need much of it. */
 typedef struct {
@@ -251,7 +239,6 @@ typedef struct {
   uchar last_drive;
 } LOLREC, far *LOLREC_PTR;
 
-
 /* DOS 4.00 and above lock/unlock region structure */
 /* see lockfil() below (Thanks to Martin Westermeier.) */
 typedef struct {
@@ -260,7 +247,6 @@ typedef struct {
   uchar f0[13];
   char file_name[80];           // 80 is a guess
 } LOCKREC, far *LOCKREC_PTR;
-
 
 /* The following structure is compiler specific, and maps
 	onto the registers pushed onto the stack for an interrupt
@@ -273,7 +259,6 @@ typedef struct {
 #endif
   uint ip, cs, flags;
 } ALL_REGS;
-
 
 #pragma pack()
 
@@ -306,7 +291,6 @@ typedef struct {
 typedef void (interrupt far *INTVECT) ();
 typedef void (*PROC)(void);
 
-
 /* ************************************************
    Global data declarations
    ************************************************ */
@@ -314,7 +298,6 @@ typedef void (*PROC)(void);
 /* This is declared in the compiler startup code to mark the
 	end of the data segment. */
 extern uint end;
-
 
 /* these are version independent pointers to various frequently used
 	locations within the various DOS structures */
@@ -329,7 +312,6 @@ SRCHREC_PTR srchrec_ptr;        /* ptr to 1st Search Data Block in SDA */
 SRCHREC_PTR srchrec_ptr_2;      /* ptr to 2nd Search Data Block in SDA */
 DIRREC_PTR dirrec_ptr;          /* ptr to 1st found dir entry area in SDA */
 DIRREC_PTR dirrec_ptr_2;        /* ptr to 1st found dir entry area in SDA */
-
 
 /* Other global data items */
 FARPROC xms_entrypoint = NULL;  /* obtained from Int 2fh/4310h */
@@ -360,7 +342,6 @@ int FAT_page_dirty = FALSE;     /* Has current FAT page been updated */
 uint last_sector = 0xffff;      /* last sector read into sector buffer */
 INTVECT prev_int2f_vector;      /* For chaining, and restoring on unload */
 int curr_fxn;                   /* Record of function in progress */
-
 
 uchar fxnmap[] = {
   _inquiry,     /* 0x00h */
@@ -412,8 +393,6 @@ uchar fxnmap[] = {
   _spopnfil     /* 0x2Eh */
 };
 
-
-
 /* ------ Utility functions --------------------------------------*/
 
 /* screen output using simple BIOS TTY to minimize library code */
@@ -423,7 +402,7 @@ uchar fxnmap[] = {
 void print_char(char c)
 {
   _asm {
-    mov ah, 0eh;
+    mov ah, 0x0e;
     mov al, byte ptr c;
     int 0x10;
   }
@@ -439,13 +418,11 @@ void print_string(char far *str, int add_newline)
   }
 }
 
-
 char *my_ltoa(ulong num)
 {
   static char buf[11] = "0000000000";
   int i;
   ulong tmp;
-
 
   buf[10] = 0;
   for (i = 0; i < 10; i++) {
@@ -458,12 +435,10 @@ char *my_ltoa(ulong num)
   return (char *) &buf[9 - i];
 }
 
-
 char *my_hex(ulong num, int len)
 {
   static char buf[9];
   static char *hex = "0123456789ABCDEF";
-
 
   buf[len] = 0;
   while (len--) {
@@ -473,55 +448,98 @@ char *my_hex(ulong num, int len)
   return buf;
 }
 
-
 /* ------------------- Internal DOS calls ------------ */
 
+#if 0
 ulong dos_ftime(void)
 {
   _asm {
     mov save_sp, sp             /* Save current stack pointer. */
-     cli mov ss, dos_ss         /* Establish DOS's stack, current */
-     mov sp, dos_sp             /* when we got called. */
-     sti mov ax, 0x120d         /* Get time/date. */
-     push di                    /* Subfunction 120C destroys di */
-     push ds                    /* It needs DS to be DOS's DS, for DOS 5.0 */
-     push es mov es, r.es mov di, r.di mov ds, r.ds int 0x2F xchg ax, dx pop es pop ds  /* Restore DS */
-     pop di mov bx, ds          /* Restore SS (same as DS) */
-     cli mov ss, bx mov sp, save_sp     /* and stack pointer (which we saved). */
- sti}} void set_sft_owner(SFTREC_PTR sft)
+      cli
+      mov ss, dos_ss         /* Establish DOS's stack, current */
+      mov sp, dos_sp             /* when we got called. */
+      sti
+      mov ax, 0x120d         /* Get time/date. */
+      push di                    /* Subfunction 120C destroys di */
+      push ds                    /* It needs DS to be DOS's DS, for DOS 5.0 */
+      push es
+      mov es, r.es
+      mov di, r.di
+      mov ds, r.ds
+      int 0x2F
+      xchg ax, dx
+      pop es
+      pop ds  /* Restore DS */
+      pop di
+      mov bx, ds          /* Restore SS (same as DS) */
+      cli
+      mov ss, bx
+      mov sp, save_sp     /* and stack pointer (which we saved). */
+      sti
+      }
+}
+#else
+ulong dos_ftime(void);
+#endif
+
+#if 0
+void set_sft_owner(SFTREC_PTR sft)
 {
   _asm {
-    push es push di les di, sft mov save_sp, sp /* Save current stack pointer. */
-     cli mov ss, dos_ss         /* Establish DOS's stack, current */
-     mov sp, dos_sp             /* when we got called. */
-     sti mov ax, 0x120c         /* Claim file as ours. */
-     push ds                    /* It needs DS to be DOS's DS, for DOS 5.0 */
-     mov ds, r.ds int 0x2F pop bx       /* Restore DS */
-     mov ds, bx                 /* Restore SS (same as DS) */
-     cli mov ss, bx mov sp, save_sp     /* and stack pointer (which we saved). */
- sti pop di pop es}}
-// Does fcbname_ptr point to a device name? int is_a_character_device(uint dos_ds)  {
+    push es
+      push di
+      les di, sft
+      mov save_sp, sp /* Save current stack pointer. */
+      cli
+      mov ss, dos_ss         /* Establish DOS's stack, current */
+      mov sp, dos_sp             /* when we got called. */
+      sti
+      mov ax, 0x120c         /* Claim file as ours. */
+      push ds                    /* It needs DS to be DOS's DS, for DOS 5.0 */
+      mov ds, r.ds
+      int 0x2F
+      pop bx       /* Restore DS */
+      mov ds, bx                 /* Restore SS (same as DS) */
+      cli
+      mov ss, bx
+      mov sp, save_sp     /* and stack pointer (which we saved). */
+      sti
+      pop di
+      pop es
+      }
+}
+#else
+void set_sft_owner(SFTREC_PTR sft);
+#endif
+
+#if 0
+// Does fcbname_ptr point to a device name?
+int is_a_character_device(uint dos_ds)
+{
   _asm {
     mov ax, 0x1223              /* Search for device name. */
-     push ds                    /* It needs DS to be DOS's DS, for DOS 5.0 */
-     mov ds, dos_ds int 0x2F pop ds     /* Restore DS */
-   jnc is_indeed} return FALSE;
+      push ds                    /* It needs DS to be DOS's DS, for DOS 5.0 */
+      mov ds, dos_ds
+      int 0x2F
+      pop ds     /* Restore DS */
+      jnc is_indeed
+      }
+  return FALSE;
 
-
-is_indeed:
+ is_indeed:
   return TRUE;
-
 }
-
-
+#else
+int is_a_character_device(uint dos_ds);
+#endif
 
 /* ------- XMS functions ------------------------------- */
 
+#if 1
 /* if XMS present, store entry point in xms_entrypoint */
 int xms_is_present(void)
 {
   int available;
-
 
   if (xms_entrypoint)
     return TRUE;
@@ -529,21 +547,34 @@ int xms_is_present(void)
   available = FALSE;
 
   _asm {
-  mov ax, 4300 h int 2f h cmp al, 80 h je present jmp SHORT done} present:available = TRUE;
-  _asm {
-    mov ax, 4310 h;
-    int 2f h;
+  mov ax, 0x4300 
+    int 0x2f
+    cmp al, 0x80 
+    je present
+    jmp done
+
+ present:
+    mov available, TRUE
+
+    mov ax, 0x4310 ;
+    int 0x2f;
     push ds;
     mov ax, seg xms_entrypoint;
     mov ds, ax;
     mov word ptr xms_entrypoint, bx;
     mov word ptr xms_entrypoint + 2, es;
     pop ds;
+
+  done:
   }
-done:
+
   return available;
 }
+#else
+int xms_is_present(void);
+#endif
 
+#if 1
 /* Return size of largest free block. Return 0 if error
 	Ignore the 'No return value' compiler warning for this function. */
 uint xms_kb_avail(void)
@@ -552,33 +583,33 @@ uint xms_kb_avail(void)
     push ds;
     mov ax, seg xms_entrypoint;
     mov ds, ax;
-    mov ah, 08 h;
-
+    mov ah, 0x08 ;
 
     call[xms_entrypoint];
     pop ds;
   }
 }
+#else
+uint xms_kb_avail(void);
+#endif
 
-
+#if 0
 /* Allocate a chunk of XMS and return a handle */
 int xms_alloc_block(uint block_size, uint *handle_ptr)
 {
   int success = FALSE;
   uint handle;
 
-
   _asm {
     push ds;
     mov ax, seg xms_entrypoint;
     mov ds, ax;
-    mov ah, 09 h;
+    mov ah, 0x09 ;
     mov dx, block_size;
-
 
     call[xms_entrypoint];
     pop ds;
-    cmp ax, 0000 h;
+    cmp ax, 0x0000 ;
     je done;
     mov handle, dx;
   }
@@ -588,38 +619,42 @@ int xms_alloc_block(uint block_size, uint *handle_ptr)
 done:
   return success;
 }
+#else
+int xms_alloc_block(uint block_size, uint *handle_ptr);
+#endif
 
-
+#if 1
 /* free XMS memory previously allocated */
 int xms_free_block(uint handle)
 {
   int success = FALSE;
 
-
   _asm {
     push ds;
     mov ax, seg xms_entrypoint;
     mov ds, ax;
-    mov ah, 0 Ah;
+    mov ah, 0x0A;
     mov dx, handle;
-
 
     call[xms_entrypoint];
     pop ds;
-    cmp ax, 0000 h;
+    cmp ax, 0x0000;
     je done;
+    mov success, 1
+  done:
   }
 
-  success = TRUE;
-done:
   return success;
 }
+#else
+int xms_free_block(uint handle);
+#endif
 
+#if 1
 /* Copy from XMS into real memory */
 int xms_copy_to_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
 {
   XMSCOPY xms;
-
 
   if (len == 0)
     return TRUE;
@@ -641,28 +676,38 @@ int xms_copy_to_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
     mov es, ax;
     push ss;
     pop ds;
+#if 0
     mov si, bp;
     add si, offset xms;
-    mov ah, 0 Bh;
+#else
+    lea si, xms;
+#endif
+    mov ah, 0x0B;
     call es:[xms_entrypoint];
     pop si;
     pop ds;
     pop es;
-    cmp ax, 0000 h;
+    cmp ax, 0x0000;
     je nogood;
+    mov ax, TRUE;
+  nogood:
+    xor ax, ax;
+  done:
+    ret;
   }
 
-  return TRUE;
-nogood:
-  return FALSE;
+  // Never reaches here
+  return 0;
 }
+#else
+int xms_copy_to_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf);
+#endif
 
-
+#if 1
 /* Copy from real memory into XMS */
 int xms_copy_fm_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
 {
   XMSCOPY xms;
-
 
   if (len == 0)
     return TRUE;
@@ -684,26 +729,34 @@ int xms_copy_fm_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
     mov es, ax;
     push ss;
     pop ds;
+#if 0
     mov si, bp;
     add si, offset xms;
-    mov ah, 0 Bh;
+#else
+    lea si, xms;
+#endif
+    mov ah, 0x0B;
     call es:[xms_entrypoint];
     pop si;
     pop ds;
     pop es;
-    cmp ax, 0000 h;
+    cmp ax, 0x0000;
     je nogood;
+    mov ax, TRUE;
+  nogood:
+    xor ax, ax;
+  done:
+    ret;
   }
 
-  return TRUE;
-nogood:
-  return FALSE;
+  // Never reaches here
+  return 0;
 }
-
-
+#else
+int xms_copy_fm_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf);
+#endif
 
 /* ------ File system functions ------------------------ */
-
 
 /* Fail Phantom, print message, exit to DOS */
 void failprog(char *msg)
@@ -714,14 +767,12 @@ void failprog(char *msg)
   exit(1);
 }
 
-
 /* Check that the page of FAT entries for the supplied sector is in
 	the buffer. If it isn't, go get it, but write back the currently
 	buffered page first if it has been updated. */
 int check_FAT_page(uint abs_sector)
 {
   int page = (int) (abs_sector / FATPAGE_SIZE);
-
 
   if (page != cur_FAT_page) {
     if (FAT_page_dirty &&
@@ -740,7 +791,6 @@ int check_FAT_page(uint abs_sector)
   return TRUE;
 }
 
-
 /* Use the FAT to find the next sector in the chain for the current
 	file/directory */
 uint next_FAT_sector(uint abs_sector)
@@ -751,13 +801,11 @@ uint next_FAT_sector(uint abs_sector)
   return FAT_page[abs_sector - (cur_FAT_page * FATPAGE_SIZE)];
 }
 
-
 /* Update the FAT entry for this sector to reflect the next sector
 	in the chain for the current file/directory */
 uint set_next_sector(uint abs_sector, uint next_sector)
 {
   uint save_sector;
-
 
   if (!check_FAT_page(abs_sector))
     return 0;
@@ -774,7 +822,6 @@ uint set_next_sector(uint abs_sector, uint next_sector)
   return save_sector;
 }
 
-
 /* Find a free sector on the disk. Use the same algorithm as
 	DOS, which is to continue looking from where the last free
 	sector was found and allocated. */
@@ -782,7 +829,6 @@ uint next_free_sector(void)
 {
   static uint prev_sector = 0;
   uint save_sector = prev_sector;
-
 
   for (;;) {
     if (++prev_sector == total_sectors)
@@ -794,7 +840,6 @@ uint next_free_sector(void)
   }
   return prev_sector;
 }
-
 
 /* Allocate the XMS memory required for the disk, partition it
    into FAT and data areas, and initialize the FAT and the root
@@ -813,7 +858,6 @@ void set_up_xms_disk(void)
 {
   ulong count, ofs;
   uint len;
-
 
   if (!xms_is_present())
     failprog("XMS not present.");
@@ -834,13 +878,11 @@ void set_up_xms_disk(void)
   free_sectors--;
   FAT_location = (ulong) total_sectors *SECTOR_SIZE;
 
-
   // First FAT entry belongs to the root directory, which,
   // unlike DOS, we keep in the data area, and which always starts at
   // sector 0. (We do not have to worry about disk defraggers and the
   // like).
   count = (ulong) total_sectors *2;
-
 
   ofs = FAT_location;
 
@@ -865,15 +907,12 @@ void set_up_xms_disk(void)
     failprog("XMS error.");
 }
 
-
-
 /* Split the last level of the path in the filname field of the
 	SDA into the FCB-style filename area, also in the SDA */
 
 void get_fcbname_from_path(char far *path, char far *fcbname)
 {
   int i;
-
 
   _fmemset(fcbname, ' ', 11);
   for (i = 0; *path; path++)
@@ -882,7 +921,6 @@ void get_fcbname_from_path(char far *path, char far *fcbname)
     else
       fcbname[i++] = *path;
 }
-
 
 /* See whether the filename matches the mask, one character
 	position at a time. A wildcard ? in tha mask matches any
@@ -893,14 +931,12 @@ int match_to_mask(char far *mask, char far *filename)
 {
   int i;
 
-
   for (i = 0; i < 11; i++)
     if ((mask[i] != filename[i]) && (mask[i] != '?'))
       return FALSE;
 
   return TRUE;
 }
-
 
 /* Find the sector number of the start of the directory entries
 	for the supplied path */
@@ -913,7 +949,6 @@ int get_dir_start_sector(char far *path, uint far *abs_sector_ptr)
   char far *next_dir;
   char far *path_end = path + _fstrlen(path);
   int i;
-
 
   while (path != path_end) {
     for (next_dir = ++path; *next_dir && (*next_dir != '\\'); next_dir++);
@@ -948,7 +983,6 @@ int get_dir_start_sector(char far *path, uint far *abs_sector_ptr)
   return TRUE;
 }
 
-
 /* Get the next directory entry that matches the specified mask,
    continuing from the supplied starting position (from the previous
    find) */
@@ -956,12 +990,11 @@ int get_dir_start_sector(char far *path, uint far *abs_sector_ptr)
 int find_next_entry(char far *mask, uchar attr_mask, char far *filename,
                     uchar far *attr_ptr, ulong far *file_time_ptr,
                     uint far *start_sec_ptr, long far *file_size_ptr,
-                    uint far *dir_sector_ptr, int far *dir_entryno_ptr)
+                    uint far *dir_sector_ptr, uint far *dir_entryno_ptr)
 {
   DIRREC *dr = (DIRREC *) &sector_buffer;
   int i = *dir_entryno_ptr + 1;
   uint abs_sector = *dir_sector_ptr;
-
 
   for (;;) {
     if (abs_sector != last_sector)
@@ -1001,7 +1034,6 @@ int find_next_entry(char far *mask, uchar attr_mask, char far *filename,
 
 }
 
-
 /* Generate a new directory entry, reusing a previously deleted
    entry, using an as yet unused entry, or allocating more space
    for the sector if no entries are available in the current
@@ -1014,7 +1046,6 @@ int create_dir_entry(uint far *dir_sector_ptr, uchar far *dir_entryno_ptr,
   uint next_sector, dir_sector = *dir_sector_ptr;
   DIRREC *dr = (DIRREC *) & sector_buffer;
   int i;
-
 
   for (;;) {
     if (dir_sector != last_sector)
@@ -1045,8 +1076,6 @@ int create_dir_entry(uint far *dir_sector_ptr, uchar far *dir_entryno_ptr,
   }
 }
 
-
-
 /* Copy the appropriate piece of data from XMS into the user buffer */
 
 void read_data(long far *file_pos_ptr, uint *len_ptr, uchar far *buf,
@@ -1054,7 +1083,6 @@ void read_data(long far *file_pos_ptr, uint *len_ptr, uchar far *buf,
 {
   uint start, rel_sector, abs_sector;
   uint i, count, len = *len_ptr;
-
 
   start = (uint) (*file_pos_ptr / SECTOR_SIZE);
 
@@ -1104,7 +1132,6 @@ update_sectors:
   *last_abs_ptr = abs_sector;
 }
 
-
 /* Adjust the file size, freeing up space, or allocating more
 	space, if necessary */
 
@@ -1112,7 +1139,6 @@ void chop_file(long file_pos, uint far *start_sec_ptr, uint far *last_rel_ptr,
                uint far *last_abs_ptr)
 {
   uint keep_sector, rel_sector, abs_sector, prev_sector = 0xFFFF;
-
 
   keep_sector = (uint) ((file_pos + SECTOR_SIZE - 1) / SECTOR_SIZE);
   abs_sector = *start_sec_ptr;
@@ -1142,7 +1168,6 @@ void chop_file(long file_pos, uint far *start_sec_ptr, uint far *last_rel_ptr,
   *last_abs_ptr = prev_sector;
 }
 
-
 /* Copy data from the user buffer into the appropriate location
 	in XMS */
 
@@ -1151,7 +1176,6 @@ void write_data(long far *file_pos_ptr, uint *len_ptr, uchar far *buf,
 {
   uint next_sector, start, rel_sector, abs_sector;
   uint i, count, len = *len_ptr;
-
 
   start = (uint) (*file_pos_ptr / SECTOR_SIZE);
 
@@ -1208,11 +1232,7 @@ update_sectors:
   *last_abs_ptr = abs_sector;
 }
 
-
-
-
 /* ---- Utility and startup functions --------------*/
-
 
 /* Fail the current redirector call with the supplied error number, i.e.
    set the carry flag in the returned flags, and set ax=error code */
@@ -1230,7 +1250,6 @@ void succeed(void)
   r.flags = (r.flags & ~FCARRY);
   r.ax = 0;
 }
-
 
 /* Deal with differences in DOS version once, and set up a set
 	of absolute pointers */
@@ -1261,8 +1280,6 @@ void set_up_pointers(void)
   }
 }
 
-
-
 /* This function should not be necessary. DOS usually generates an FCB
    style name in the appropriate SDA area. However, in the case of
    user input such as 'CD ..' or 'DIR ..' it leaves the fcb area all
@@ -1278,12 +1295,10 @@ void generate_fcbname(uint dos_ds)
   filename_is_char_device = is_a_character_device(dos_ds);
 }
 
-
 /* Does the supplied string contain a wildcard '?' */
 int contains_wildcards(char far *path)
 {
   int i;
-
 
   for (i = 0; i < 11; i++)
     if (path[i] == '?')
@@ -1291,8 +1306,7 @@ int contains_wildcards(char far *path)
   return FALSE;
 }
 
-
-
+#if 0
 /* Get DOS version, address of Swappable DOS Area, and address of
 	DOS List of lists. We only run on versions of DOS >= 3.10, so
 	fail otherwise */
@@ -1302,29 +1316,42 @@ void get_dos_vars(void)
   uint segmnt;
   uint ofset;
 
-
   if ((_osmajor < 3) || ((_osmajor == 3) && (_osminor < 10)))
     failprog("Unsupported DOS Version");
 
   _asm {
-    push ds push es mov ax, 5 d06h;     /* Get SDA pointer */
-    int 21 h;
-  mov segmnt, ds mov ofset, si pop es pop ds}
+    push ds
+      push es
+      mov ax, 0x5d06     /* Get SDA pointer */
+    int 21 h
+    mov segmnt, ds
+      mov ofset, si
+      pop es
+      pop ds
+      }
+
   sda_ptr = MK_FP(segmnt, ofset);
 
   _asm {
-    push ds push es mov ax, 5200 h;     /* Get Lol pointer */
+    push ds
+      push es
+      mov ax, 0x5200;     /* Get Lol pointer */
     int 21 h;
-  mov segmnt, es mov ofset, bx pop es pop ds}
+    mov segmnt, es
+      mov ofset, bx
+      pop es
+      pop ds
+      }
   lolptr = (LOLREC_PTR) MK_FP(segmnt, ofset);
 }
-
+#else
+void get_dos_vars(void);
+#endif
 
 int is_call_for_us(uint es, uint di, uint ds)
 {
   uchar far *p;
   int ret = 0xFF;
-
 
   filename_is_char_device = 0;
 
@@ -1345,7 +1372,6 @@ int is_call_for_us(uint es, uint di, uint ds)
       if (curr_fxn == _fnext)   // Find Next
       {
         SRCHREC_PTR psrchrec;   // check search record in SDA
-
 
         if (_osmajor == 3)
           psrchrec = &(((V3_SDA_PTR) sda_ptr)->srchrec);
@@ -1372,22 +1398,24 @@ int is_call_for_us(uint es, uint di, uint ds)
   return ret;
 }
 
-
-
+#if 0
 /* Check to see that we are allowed to install */
 void is_ok_to_load(void)
 {
   _asm {
-    mov ax, 1100 h;
+    mov ax, 0x1100;
     int 2f h;
-    cmp ax, 1 jne go_forward;
+    cmp ax, 1
+      jne go_forward;
   }
   failprog("Not OK to install a redirector...");
 
 go_forward:
   return;
 }
-
+#else
+void is_ok_to_load(void);
+#endif
 
 /* This is where we do the initializations of the DOS structures
 	that we need in order to fit the mould */
@@ -1396,14 +1424,12 @@ void set_up_cds(void)
 {
   V3_CDS_PTR our_cds_ptr;
 
-
   our_cds_ptr = lolptr->cds_ptr;
   if (_osmajor == 3)
 //              our_cds_ptr = our_cds_ptr + (our_drive_no - 1);  // ref: DR_TOO_HIGH
     our_cds_ptr = our_cds_ptr + our_drive_no;
   else {
     V4_CDS_PTR t = (V4_CDS_PTR) our_cds_ptr;
-
 
 //              t = t + (our_drive_no - 1);  // ref: DR_TOO_HIGH
     t = t + our_drive_no;
@@ -1433,18 +1459,13 @@ void set_up_cds(void)
   current_path += our_cds_ptr->root_ofs;
 }
 
-
-
 /* ----- Redirector functions ------------------*/
-
 
 /* Respond that it is OK to load another redirector */
 void inquiry(void)
 {
   r.ax = 0x00FF;
 }
-
-
 
 /* FindNext  - subfunction 1Ch */
 void fnext(void)
@@ -1468,8 +1489,6 @@ uint fnext2(void)
                           &srchrec_ptr_2->dir_entry_no)) ? 0 : 18;
 }
 
-
-
 /* FindFirst - subfunction 1Bh */
 
 /* This function looks a little odd because of the embedded call to
@@ -1488,7 +1507,6 @@ void ffirst(void)
 {
   char far *path;
   int success;
-
 
   /* Special case for volume-label-only search - must be in root */
   if (path = (*srch_attr_ptr == 0x08)
@@ -1515,7 +1533,6 @@ void ffirst(void)
     r.ax = 2;   // make fnext error code suitable to ffirst
 }
 
-
 /* Internal findfirst for delete and rename processing */
 uint ffirst2(void)
 {
@@ -1527,7 +1544,6 @@ uint ffirst2(void)
 
   return fnext2();
 }
-
 
 /* ReMove Directory - subfunction 01h */
 void rd(void)
@@ -1583,7 +1599,6 @@ void rd(void)
   succeed();
 }
 
-
 /* Make Directory - subfunction 03h */
 void md(void)
 {
@@ -1634,7 +1649,6 @@ void md(void)
   succeed();
 }
 
-
 /* Change Directory - subfunction 05h */
 void cd(void)
 {
@@ -1655,12 +1669,10 @@ void cd(void)
   _fstrcpy(current_path, filename_ptr);
 }
 
-
 /* Close File - subfunction 06h */
 void clsfil(void)
 {
   SFTREC_PTR p = (SFTREC_PTR) MK_FP(r.es, r.di);
-
 
   if (p->handle_count)  /* If handle count not 0, decrement it */
     --p->handle_count;
@@ -1687,7 +1699,6 @@ void clsfil(void)
   }
 }
 
-
 /* Commit File - subfunction 07h */
 void cmmtfil(void)
 {
@@ -1695,14 +1706,12 @@ void cmmtfil(void)
   return;
 }
 
-
 /* Read from File - subfunction 08h */
 // For version that handles critical errors,
 // see Undocumented DOS, 2nd edition, chapter 8
 void readfil(void)
 {
   SFTREC_PTR p = (SFTREC_PTR) MK_FP(r.es, r.di);
-
 
   if (p->open_mode & 1) {
     fail(5);
@@ -1720,12 +1729,10 @@ void readfil(void)
             p->start_sector, &p->rel_sector, &p->abs_sector);
 }
 
-
 /* Write to File - subfunction 09h */
 void writfil(void)
 {
   SFTREC_PTR p = (SFTREC_PTR) MK_FP(r.es, r.di);
-
 
   if (!(p->open_mode & 3)) {
     fail(5);
@@ -1748,7 +1755,6 @@ void writfil(void)
     p->file_size = p->file_pos;
 }
 
-
 /* Lock file - subfunction 0Ah */
 
 /* We support this function only to illustrate how it works. We do
@@ -1761,7 +1767,6 @@ void lockfil(void)
   LOCKREC_PTR lockptr;
   ulong region_offset;
   ulong region_length;
-
 
   if (_osmajor > 3) {
     // In v4.0 and above, lock info is at DS:BX in a LOCKREC structure
@@ -1787,7 +1792,6 @@ void lockfil(void)
   return;
 }
 
-
 /* UnLock file - subfunction 0Bh */
 
 /* We support this function only to illustrate how it works. The following
@@ -1798,7 +1802,6 @@ void unlockfil(void)
   ulong region_offset;
   ulong region_length;
 
-
   // In v3.x, lock info is in regs and on the stack
   region_offset = ((ulong) r.cx << 16) + r.dx;
   region_length = ((ulong) r.si << 16) + *stack_param_ptr;
@@ -1808,8 +1811,6 @@ void unlockfil(void)
   return;
 }
 
-
-
 /* Get Disk Space - subfunction 0Ch */
 void dskspc(void)
 {
@@ -1818,7 +1819,6 @@ void dskspc(void)
   r.cx = SECTOR_SIZE;
   r.dx = free_sectors;
 }
-
 
 /* Get File Attributes - subfunction 0Fh */
 void getfatt(void)
@@ -1835,7 +1835,6 @@ void getfatt(void)
 
   r.ax = (uint) dirrec_ptr->file_attr;
 }
-
 
 /* Set File Attributes - subfunction 0Eh */
 void setfatt()
@@ -1857,15 +1856,12 @@ void setfatt()
   }
 }
 
-
-
 /* Rename File - subfunction 11h */
 void renfil(void)
 {
   char far *path;
   uint ret = 0, dir_sector;
   int i = 0, j;
-
 
   *srch_attr_ptr = 0x21;
   srchrec_ptr_2->attr_mask = 0x3f;
@@ -1940,12 +1936,10 @@ void renfil(void)
     fail(r.ax);
 }
 
-
 /* Delete File - subfunction 13h */
 void delfil(void)
 {
   uint ret = 0;
-
 
   *srch_attr_ptr = 0x21;
   ffirst();
@@ -1974,8 +1968,6 @@ void delfil(void)
     fail(r.ax);
 }
 
-
-
 /* Support functions for the various file open functions below */
 
 void init_sft(SFTREC_PTR p)
@@ -2002,7 +1994,6 @@ void init_sft(SFTREC_PTR p)
   if (p->open_mode & 0x8000)
     set_sft_owner(p);
 }
-
 
 /* Note that the following function uses dirrec_ptr to supply much of
    the SFT data. This is because an open of an existing file is
@@ -2037,12 +2028,10 @@ void fill_sft(SFTREC_PTR p, int use_found_1, int truncate)
   }
 }
 
-
 /* Open Existing File - subfunction 16h */
 void opnfil(void)
 {
   SFTREC_PTR p;
-
 
   /* locate any file for any open */
 
@@ -2061,12 +2050,10 @@ void opnfil(void)
   }
 }
 
-
 /* Truncate/Create File - subfunction 17h */
 void creatfil(void)
 {
   SFTREC_PTR p = (SFTREC_PTR) MK_FP(r.es, r.di);
-
 
   if (contains_wildcards(fcbname_ptr)) {
     fail(3);
@@ -2088,14 +2075,11 @@ void creatfil(void)
   succeed();
 }
 
-
-
 /* This function is never called! DOS fiddles with position internally */
 void skfmend(void)
 {
   long seek_amnt;
   SFTREC_PTR p;
-
 
   /* But, just in case... */
   seek_amnt = -1L * (((long) r.cx << 16) + r.dx);
@@ -2108,14 +2092,11 @@ void skfmend(void)
   r.ax = (uint) (p->file_pos & 0xFFFF);
 }
 
-
 void unknown_fxn_2D()
 {
   r.ax = 2;
   /* Only called in v4.01, this is what MSCDEX returns */
 }
-
-
 
 /* Special Multi-Purpose Open File - subfunction 2Eh */
 
@@ -2127,7 +2108,6 @@ void special_opnfil(void)
 {
   SFTREC_PTR p = (SFTREC_PTR) MK_FP(r.es, r.di);
   uint open_mode, action;
-
 
   open_mode = ((V4_SDA_PTR) sda_ptr)->mode_2E & 0x7f;
   action = ((V4_SDA_PTR) sda_ptr)->action_2E;
@@ -2167,14 +2147,11 @@ void special_opnfil(void)
   succeed();
 }
 
-
 /* A placeholder */
 void unsupported(void)
 {
   return;
 }
-
-
 
 PROC dispatch_table[] = {
   inquiry,      /* 0x00h */
@@ -2226,22 +2203,18 @@ PROC dispatch_table[] = {
   special_opnfil        /* 0x0Eh */
 };
 
-
-
-
 /* -------------------------------------------------------------*/
 
+#if 0
 /* This is the main entry point for the redirector. It assesses if
    the call is for our drive, and if so, calls the appropriate routine. On
    return, it restores the (possibly modified) register values. */
-
 
 void interrupt far redirector(ALL_REGS entry_regs)
 {
   static uint save_bp;
 
   _asm STI;
-
 
   if (((entry_regs.ax >> 8) != (uchar) 0x11) || ((uchar) entry_regs.ax > MAX_FXN_NO))
     goto chain_on;
@@ -2261,16 +2234,23 @@ void interrupt far redirector(ALL_REGS entry_regs)
   _asm mov dos_ss, ss;
   _asm mov save_bp, bp;
 
-
   stack_param_ptr = (uint far *) MK_FP(dos_ss, save_bp + sizeof(ALL_REGS));
 
   _asm {
     mov dos_sp, sp;
-    mov ax, ds cli mov ss, ax   // New stack segment is in Data segment.
-   mov sp, offset our_stack + STACK_SIZE - 2 sti}
-  // Expect success! succeed();// Call the appropriate handling function unless we already know we// need to fail
-    if (filename_is_char_device)
-     fail(5);
+    mov ax, ds
+      cli mov ss, ax   // New stack segment is in Data segment.
+      mov sp, offset our_stack + STACK_SIZE - 2
+      sti
+      }
+  
+  // Expect success!
+  succeed();
+
+  // Call the appropriate handling function unless we already know we
+  // need to fail
+  if (filename_is_char_device)
+    fail(5);
   else
     dispatch_table[curr_fxn] ();
 
@@ -2280,7 +2260,6 @@ void interrupt far redirector(ALL_REGS entry_regs)
     mov ss, dos_ss;
     mov sp, dos_sp;
 
-
     sti;
   }
 
@@ -2289,20 +2268,20 @@ void interrupt far redirector(ALL_REGS entry_regs)
   return;
 
   // If the call wasn't for us, we chain on.
-chain_on:
+ chain_on:
   _chain_intr(prev_int2f_vector);
 }
-
-
-
+#else
+void interrupt far redirector(ALL_REGS entry_regs);
+#endif
 
 /* ---- Unload functionality --------------*/
-
 
 /* Find the latest Phantom installed, unplug it from the Int 2F
 	chain if possible, make the CDS reflect an invalid drive, and
 	free its real and XMS memory. */
 
+#if 0
 void unload_latest()
 {
   int i;
@@ -2312,13 +2291,11 @@ void unload_latest()
   uint psp;
   static uint save_ss, save_sp;
 
-
   // Note that we step backwards to allow unloading of Multiple copies
   // in reverse order to loading, so that the Int 2Fh chain remains
   // intact.
   for (i = 0x66; i >= 0x60; i--) {
     long far *p;
-
 
     p = (long far *) MK_FP(0, ((uint) i * 4));
     sig_ptr = (SIGREC_PTR) * p;
@@ -2353,7 +2330,6 @@ void unload_latest()
   else {
     V4_CDS_PTR t = (V4_CDS_PTR) cds_ptr;
 
-
 //              t += (our_drive_no - 1);  // ref: DR_TOO_HIGH
     t += our_drive_no;
     cds_ptr = (V3_CDS_PTR) t;
@@ -2373,7 +2349,6 @@ void unload_latest()
     push di;
     push bp;
 
-
     // Set resident program's parent PSP to us.
     mov es, psp;
     mov bx, 0x16;
@@ -2381,30 +2356,24 @@ void unload_latest()
     mov es:[di], ax;
     mov di, 0x0a;
 
-
     // Set resident program PSP return address to exit_ret;
     mov ax, offset exit_ret;
-
 
     stosw;
     mov ax, cs;
 
-
     stosw;
     mov bx, es;
-
 
     // Set current PSP to resident program
     mov ah, 0x50;
     int 21 h;
-
 
     // Save SS:SP
     mov ax, seg save_ss;
     mov ds, ax;
     mov save_ss, ss;
     mov save_sp, sp;
-
 
     // and terminate
     mov ax, 0x4c00;
@@ -2418,14 +2387,12 @@ exit_ret:
     mov ss, save_ss;
     mov sp, save_sp;
 
-
     // restore the registers
     pop bp;
     pop di;
     pop si;
     pop ds;
     pop es;
-
 
     // Set current PSP back to us.
     mov bx, _psp;
@@ -2439,8 +2406,9 @@ exit_ret:
   print_string(our_drive_str, FALSE);
   print_string(" is now invalid.", TRUE);
 }
-
-
+#else
+void unload_latest();
+#endif
 
 /* ------- TSR termination routines -------- */
 
@@ -2453,13 +2421,11 @@ void prepare_for_tsr(void)
   uchar far *buf;
   int i;
 
-
   // Find ourselves a free interrupt to call our own. Without it,
   // we can still load, but a future invocation of Phantom with -U
   // will not be able to unload us.
   for (i = 0x60; i < 0x67; i++) {
     long far *p;
-
 
     p = (long far *) MK_FP(0, ((uint) i * 4));
     if (*p == 0L)
@@ -2486,8 +2452,6 @@ void prepare_for_tsr(void)
   *((SIGREC_PTR) buf) = sigrec;
 }
 
-
-
 void tsr(void)
 {
   uint tsr_paras;               // Paragraphs to terminate and leave resident.
@@ -2495,16 +2459,12 @@ void tsr(void)
 
   _asm mov highest_seg, ds;
 
-
   tsr_paras = highest_seg + (((uint) &end) / 16) + 1 - _psp;
 
   // Plug ourselves into the Int 2Fh chain
   _dos_setvect(0x2f, redirector);
   _dos_keep(0, tsr_paras);
 }
-
-
-
 
 /* --------------------------------------------------------------------*/
 
