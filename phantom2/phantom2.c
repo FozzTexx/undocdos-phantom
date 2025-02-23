@@ -425,7 +425,7 @@ void print_char(char c)
   _asm {
     mov ah, 0eh;
     mov al, byte ptr c;
-    int 10 h;
+    int 0x10;
   }
 }
 
@@ -958,7 +958,7 @@ int find_next_entry(char far *mask, uchar attr_mask, char far *filename,
                     uint far *start_sec_ptr, long far *file_size_ptr,
                     uint far *dir_sector_ptr, int far *dir_entryno_ptr)
 {
-  DIRREC *dr = (DIRREC *) & sector_buffer;
+  DIRREC *dr = (DIRREC *) &sector_buffer;
   int i = *dir_entryno_ptr + 1;
   uint abs_sector = *dir_sector_ptr;
 

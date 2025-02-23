@@ -12,6 +12,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <dos.h>
+#include "../fujinet-rs232/sys/print.h"
 
 #pragma pack(1)
 
@@ -27,7 +28,6 @@ enum {
 };
 
 #define Registers union REGS
-#define dosversion (_osmajor << 8 | _osminor)
 #define msdos(x) intdosx(&x, &x, &sr)
 #define ptr(x, y) MK_FP(x, y)
 #define _Escape exit
@@ -38,6 +38,7 @@ enum {
 #define swapvectors()
 #define MEMW(x, y) *((uint16_t *) MK_FP(x, y))
 #define prefixseg FP_SEG(_psp)
+#define asclen(x) _fstrlen(x)
 
 extern __segment getCS(void);
 #pragma aux getCS = \
@@ -68,7 +69,7 @@ typedef struct sig_rec {
 
 #define maxfilesize     (unsigned int) 32767   /* for our 1 file */
 
-#define isr_code_max    102   /* offset of last byte */
+//#define isr_code_max    102   /* offset of last byte */
 
 
 /* in our ISR macine code */
@@ -77,13 +78,13 @@ typedef Char cdsidarr[cds_id_size];
 
 /* FindFirst/Next data block - ALL DOS VERSIONS */
 
-typedef struct sdb_rec {
-  uchar drv_lett;
-  Char srch_tmpl[11];
-  uchar srch_attr;
-  unsigned short dir_entry, par_clstr;
-  uchar f1[4];
-} sdb_rec;
+typedef struct {
+  uchar drive_num; // drv_lett;
+  Char pattern[11]; // srch_tmpl[11];
+  uchar attr_mask; //srch_attr;
+  unsigned short sequence, sector; //dir_entry, par_clstr;
+  uchar _reserved[4]; // f1[4];
+} SRCHREC, far *SRCHREC_PTR;
 
 /* DOS System File Table entry - ALL DOS VERSIONS */
 
@@ -122,18 +123,18 @@ typedef struct cds4_rec {
 
 /* DOS Directory entry for 'found' file - ALL DOS VERSIONS */
 
-typedef struct dir_rec {
-  Char fname[11];
-  uchar fattr;
-  uchar f1[10];
-  unsigned short time_lstupd, date_lstupd, start_clstr;
+typedef struct {
+  Char name[11]; // fname[11];
+  uchar attr; // fattr;
+  uchar _reserved1[10]; // f1[10];
+  unsigned short time, date, start_sector; // time_lstupd, date_lstupd, start_clstr;
       /* we don't need to touch this */
-  LONGINT fsiz;
-} dir_rec;
+  LONGINT size; //fsiz;
+} DIRREC, far *DIRREC_PTR;
 
 /* Swappable DOS Area - DOS VERSION 3.xx */
 
-typedef struct sda3_rec {
+typedef struct {
   uchar f0[12];
   Anyptr curr_dta;
   uchar f1[30];
@@ -141,8 +142,8 @@ typedef struct sda3_rec {
   unsigned short yy_1980;
   uchar f2[96];
   Char fn1[128], fn2[128];
-  sdb_rec sdb;
-  dir_rec found_file;
+  SRCHREC sdb;
+  DIRREC found_file;
   cds3_rec drive_cdscopy;
   Char fcb_fn1[11];
   uchar f3;
@@ -154,13 +155,13 @@ typedef struct sda3_rec {
   uchar f6[12];
   unsigned short fn1_csofs, fn2_csofs;
   uchar f7[56];
-  sdb_rec ren_srcfile;
-  dir_rec ren_file;
-} sda3_rec;
+  SRCHREC ren_srcfile;
+  DIRREC ren_file;
+} sda3_rec, far *sda3_ptr;
 
 /* Swappable DOS Area - DOS VERSION 4.xx */
 
-typedef struct sda4_rec {
+typedef struct {
   uchar f0[12];
   Anyptr curr_dta;
   uchar f1[32];
@@ -168,8 +169,8 @@ typedef struct sda4_rec {
   unsigned short yy_1980;
   uchar f2[106];
   Char fn1[128], fn2[128];
-  sdb_rec sdb;
-  dir_rec found_file;
+  SRCHREC sdb;
+  DIRREC found_file;
   cds4_rec drive_cdscopy;
   Char fcb_fn1[11];
   uchar f3;
@@ -183,9 +184,9 @@ typedef struct sda4_rec {
   uchar f7[71];
   unsigned short spop_act, spop_attr, spop_mode;
   uchar f8[29];
-  sdb_rec ren_srcfile;
-  dir_rec ren_file;
-} sda4_rec;
+  SRCHREC ren_srcfile;
+  DIRREC ren_file;
+} sda4_rec, far *sda4_ptr;
 
 /* DOS List of lists structure - DOS VERSIONS 3.1 thru 4 */
 
@@ -224,11 +225,15 @@ typedef struct regset {
   unsigned short bp, es, ds, di, si, dx, cx, bx, ax, ss, sp, cs, ip, flags;
 } regset;
 
+#if 0
 /* Our Int 2F ISR structure */
 typedef uchar isr_code_buffer[isr_code_max + 1];
+#endif
 
-typedef struct isr_rec {
+typedef struct {
+#if 0
   isr_code_buffer ic;   /* Contains our macine code ISR stub code */
+#endif
   unsigned short save_ss;   /* Stores SS on entry before stack switch */
   unsigned short save_sp;   /* Stores SP on entry before stack switch */
   unsigned short real_fl;   /* Stores flags as they were on entry */
@@ -243,8 +248,7 @@ typedef Char strfn[13];
 
 /* all the calls we need to support are in the range 0..33 */
 
-#define fxn_map_max     0x2e
-
+#if 0
 /* The following are offsets into the ISR stub code where run time
    values must be fixed in */
 #define prev_hndlr      99
@@ -262,7 +266,9 @@ typedef Char strfn[13];
 #define save_cs_ofs     (isr_code_max + 9)
 #define save_ip_ofs     (isr_code_max + 11)
 #define our_drv_ofs     (isr_code_max + 13)
+#endif
 
+void far *prev_hndlr;
 
 typedef Char str4[5];
 
@@ -273,7 +279,7 @@ static sig_rec our = {
 
 static Char vollab[14] = "AN ILLUS.ION\0";   /* Our Volume label */
 
-static fxn_type fxn_map[fxn_map_max + 1] = {
+static fxn_type fxn_map[] = {
   _inquiry, _rd, _unsupported, _md, _unsupported, _cd, _close, _commit, _read,
   _write, _lock, _unlock, _space, _unsupported, _setattr, _getattr,
   _unsupported, _rename, _unsupported, _delete, _unsupported, _unsupported,
@@ -283,7 +289,9 @@ static fxn_type fxn_map[fxn_map_max + 1] = {
   _unsupported, _unsupported, _unsupported, _unsupported, _unsupported,
   _unsupported, _specopen
 };
+#define fxn_map_max     (sizeof(fxn_map) / sizeof(fxn_map[0]))
 
+#if 0
 /* Our ISR stub code is defined as a constant array of bytes which
    actually contains machine code as commented on the right */
 /* entry: */
@@ -335,6 +343,7 @@ static isr_code_buffer isr_code = {
   save_rf_ofs, 0, 0x2e, 0x80, 0x3e, our_drv_ofs, 0, 0, 0x74, 0x4, 0x9d, 0xca,
   0x2, 0, 0x9d, 0xea, 0, 0, 0, 0
 };
+#endif
 
 /* The instance of our Int 2F ISR */
 static isr_rec *isr;
@@ -352,15 +361,15 @@ static ascbuf max_path;
 
 /* Global stuff */
 static unsigned short our_sp;   /* SP to switch to on entry */
-static uchar dos_major;   /* Major DOS vers */
-static uchar dos_minor;   /* Minor DOS vers */
 static uchar drive_no;   /* A: is 1, B: is 2, etc. */
 static Char strbuf[256];   /* General purpose pascal string buffer */
-static Char *a1;   /* Pointer to an ASCIIZ string */
+static Char far *a1;   /* Pointer to an ASCIIZ string */
 static Char *a2;   /* Pointer to an ASCIIZ string */
 static Char drive[4];   /* Command line parameter area */
 static fxn_type fxn;   /* Record of function in progress */
+#if 0
 static regset r;   /* Global save area for all caller's regs */
+#endif
 static fcbfnbuf temp_name;   /* General purpose ASCIIZ filename buffer */
 static uchar iroot;   /* Index to root directory in max_path */
 static uchar icur;   /* Index to current directory in max_path */
@@ -402,10 +411,7 @@ static void get_dos_vars()
   Registers r;
   struct SREGS sr;
 
-  ver = dosversion;
-  dos_major = ver & 255;
-  dos_minor = ver >> 8;
-  if (dos_major < 3 || dos_major == 3 && dos_minor < 10)
+  if (_osmajor < 3 || _osmajor == 3 && _osminor < 10)
     failprog("DOS Version must be 3.10 or greater");
   r.x.ax = 0x5d06;
   msdos(r);
@@ -416,6 +422,7 @@ static void get_dos_vars()
 }
 
 
+#if 0
 /* Fail the current redirector call with the supplied error number, i.e.
    set the carry flag in the returned flags, and set ax=error code */
 static void fail(err)
@@ -424,7 +431,7 @@ unsigned short err;
   r.flags |= INTR_CF;
   r.ax = err;
 }
-
+#endif
 
 /* Convert an 11 byte fcb style filename to ASCIIZ name.ext format */
 static void fnfmfcbnm(ss, p)
@@ -448,7 +455,8 @@ Char **p;
   if (j != 8) {
     (*p)[i] = '.';
     (*p)[j] = '\0';
-  } else
+  }
+  else
     (*p)[i] = '\0';
 }
 
@@ -473,7 +481,7 @@ Anyptr ss, pp;
   }
 }
 
-
+#if 0
 /* Get the length of an ASCIIZ string */
 static unsigned short asclen(a)
 Char *a;
@@ -484,6 +492,7 @@ Char *a;
     i++;
   return i;
 }
+#endif
 
 
 /* Set up global a1 to point to the appropriate source for the file
@@ -506,10 +515,10 @@ static void set_fn1()
   case _create:
   case _ffirst:
   case _specopen:
-    if (dos_major == 3)
-      a1 = ((sda3_rec *)sda)->fn1;
+    if (_osmajor == 3)
+      a1 = ((sda3_ptr) sda)->fn1;
     else
-      a1 = ((sda4_rec *)sda)->fn1;
+      a1 = ((sda4_ptr) sda)->fn1;
     break;
 
   /* These do not need a filename. The following is valid-ish... */
@@ -524,34 +533,30 @@ static void set_fn1()
   /* For findnext, an fcb style filename template is available within the
      SDA search data block field */
   case _fnext:
-    if (dos_major == 3)
-      a1 = ((sda3_rec *)sda)->sdb.srch_tmpl;
+    if (_osmajor == 3)
+      a1 = ((sda3_ptr) sda)->sdb.pattern;
     else
-      a1 = ((sda4_rec *)sda)->sdb.srch_tmpl;
+      a1 = ((sda4_ptr) sda)->sdb.pattern;
     break;
   }
 }
 
 
 /* Back up a directory level, ie go back to the previous \ in a path string */
-static boolean back_1(path, i)
-Char *path;
-uchar *i;
+static boolean back_1(char far *path, uchar idx)
 {
-  if (*i == iroot)
-    return false;
+  if (idx == iroot)
+    return 0;
   do {
-    (*i)--;
-  } while (*i != iroot && path[*i] != '\\');
-  return true;
+    idx--;
+  } while (idx != iroot && path[idx] != '\\');
+  return idx;
 }
 
 
 /* Check that the qualified pathname that is in a1 matches our full
    directory structure to length lsrc. If not, fail with 'Path not found' */
-static boolean process_path(a1, lsrc)
-Char *a1;
-uchar lsrc;
+static boolean process_path(char far *a1, uchar lsrc)
 {
   boolean Result;
   uchar isrc = 0;
@@ -562,7 +567,6 @@ uchar lsrc;
       return false;
     }
   }
-  isrc++;
   if (max_path[isrc] == '\\')
     return true;
   fail(3);
@@ -596,11 +600,11 @@ static void cd()
     lsrc--;
   if (!process_path(a1, lsrc))
     return;
-  if (dos_major == 3)   /* Copy in the new path into the CDS */
-    memmove(((cds3_rec *)((sda3_rec *)sda)->drive_cdsptr)->curr_path,
+  if (_osmajor == 3)   /* Copy in the new path into the CDS */
+    memmove(((cds3_rec *)((sda3_ptr) sda)->drive_cdsptr)->curr_path,
 	    max_path, (long)lsrc);
   else
-    memmove(((cds4_rec *)((sda4_rec *)sda)->drive_cdsptr)->curr_path,
+    memmove(((cds4_rec *)((sda4_ptr) sda)->drive_cdsptr)->curr_path,
 	    max_path, (long)lsrc);
   icur = lsrc;
 }
@@ -626,7 +630,7 @@ static void rd()
     fail(5);
     return;
   }
-  if (!back_1(max_path, &lmax)) {
+  if (!(lmax = back_1(max_path, lmax))) {
     fail(3);
     return;
   }
@@ -641,7 +645,7 @@ static void md()
 
   lsrc = asclen(a1);
   isrc = lsrc;
-  if (!back_1(a1, &isrc)) {
+  if (!(isrc = back_1(a1, isrc))) {
     fail(5);
     return;
   }
@@ -651,45 +655,25 @@ static void md()
     fail(5);
     return;
   }
-  memmove(max_path, a1, (long)lsrc);
+  _fmemmove(max_path, a1, (long)lsrc);
   max_path[lsrc] = '\\';
   max_path[lsrc+1] = '\0';
   lmax = lsrc;
 }
 
-#if 0
-/* pop di   push cs   mov ax, 1208h   int 2fh */
-static unsigned short dec_SFT(es, di)
-unsigned short es, di;
-{
-  _asm {
-    pop di
-    push cs
-    mov ax, 0x1208
-    int 0x2f
-  }
-}
-#else
 static unsigned short dec_SFT(void far *);
 #pragma aux dec_SFT = \
   "mov ax, 0x1208" \
   "int 0x2f" \
   parm [es di] \
   modify [ax]
-#endif
 
-/* pop di   push cs   mov ax, 120ch   int 2fh */
-static void set_Owner(es, di)
-unsigned short es, di;
-{
-  _asm {
-    pop di
-    push cs
-    mov ax, 0x120c
-    int 0x2f
-  }
-}
-
+void set_Owner(void far *);
+#pragma aux set_Owner = \
+  "mov ax, 0x120C" \
+  "int 0x2F" \
+  parm [es di] \
+  modify [ax]
 
 /* Close File - subfunction 06h */
 static void clsfil()
@@ -733,11 +717,11 @@ static void readfil()
     r.cx = 0;
   else if (WITH->f_pos + r.cx > WITH->f_size)
     r.cx = WITH->f_size - WITH->f_pos;
-  if (dos_major == 3)
-    _fmemmove(((sda3_rec *)sda)->curr_dta, (&file_buffer[WITH->f_pos]),
+  if (_osmajor == 3)
+    _fmemmove(((sda3_ptr) sda)->curr_dta, (&file_buffer[WITH->f_pos]),
 	    (long)r.cx);
   else
-    _fmemmove(((sda4_rec *)sda)->curr_dta, (&file_buffer[WITH->f_pos]),
+    _fmemmove(((sda4_ptr) sda)->curr_dta, (&file_buffer[WITH->f_pos]),
 	    (long)r.cx);
   WITH->f_pos += r.cx;
 }
@@ -757,11 +741,11 @@ static void writfil()
   }
   if (WITH->f_pos + r.cx > maxfilesize)
     r.cx = maxfilesize - WITH->f_pos;
-  if (dos_major == 3)
-    _fmemmove((&file_buffer[WITH->f_pos]), ((sda3_rec *)sda)->curr_dta,
+  if (_osmajor == 3)
+    _fmemmove((&file_buffer[WITH->f_pos]), ((sda3_ptr) sda)->curr_dta,
 	    (long)r.cx);
   else
-    _fmemmove((&file_buffer[WITH->f_pos]), ((sda4_rec *)sda)->curr_dta,
+    _fmemmove((&file_buffer[WITH->f_pos]), ((sda4_ptr) sda)->curr_dta,
 	    (long)r.cx);
   WITH->f_pos += r.cx;
   if (WITH->f_pos > file_size)
@@ -790,7 +774,7 @@ static void setfatt()
 
   lsrc = asclen(a1);
   isrc = lsrc;
-  if (!back_1(a1, &isrc)) {
+  if (!(isrc = back_1(a1, isrc))) {
     fail(2);
     return;
   }
@@ -802,7 +786,7 @@ static void setfatt()
   }
   isrc++;
   memset(temp_name, '\0', 13L);
-  memmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
+  _fmemmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
   if (strncmp(temp_name, file_name, sizeof(fcbfnbuf))) {
     fail(2);
     return;
@@ -820,7 +804,7 @@ static void getfatt()
 
   lsrc = asclen(a1);
   isrc = lsrc;
-  if (!back_1(a1, &isrc)) {
+  if (!(isrc = back_1(a1, isrc))) {
     fail(2);
     return;
   }
@@ -832,7 +816,7 @@ static void getfatt()
   }
   isrc++;
   memset(temp_name, '\0', 13L);
-  memmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
+  _fmemmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
   if (strncmp(temp_name, file_name, sizeof(fcbfnbuf))) {
     fail(2);
     return;
@@ -847,14 +831,15 @@ static void renfil()
 {
   uchar lsrc, isrc;
 
-  if (dos_major == 3) {
-    a2 = (Char *)ptr((long)r.ss, (long)((sda3_rec *)sda)->fn2_csofs);
-  } else {
-    a2 = (Char *)ptr((long)r.ss, (long)((sda4_rec *)sda)->fn2_csofs);
+  if (_osmajor == 3) {
+    a2 = (Char *)ptr((long)r.ss, (long)((sda3_ptr) sda)->fn2_csofs);
+  }
+  else {
+    a2 = (Char *)ptr((long)r.ss, (long)((sda4_ptr) sda)->fn2_csofs);
   }
   lsrc = asclen(a1);
   isrc = lsrc;
-  if (!back_1(a1, &isrc)) {
+  if (!(isrc = back_1(a1, isrc))) {
     fail(3);
     return;
   }
@@ -866,7 +851,7 @@ static void renfil()
   }
   isrc++;
   memset(temp_name, '\0', 13L);
-  memmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
+  _fmemmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
   /* Check that the current filename matches ours */
   if (strncmp(temp_name, file_name, sizeof(fcbfnbuf))) {
     fail(2);
@@ -879,7 +864,7 @@ static void renfil()
   /*    if file_opens>0 then begin fail(5); exit; end; */
   lsrc = asclen(a2);
   isrc = lsrc;
-  if (!back_1(a2, &isrc)) {
+  if (!(isrc = back_1(a2, isrc))) {
     fail(3);
     return;
   }
@@ -895,30 +880,26 @@ static void renfil()
 
 /* This procedure does a wildcard match from the mask onto the target, and,
    if a hit, updates the search data block and found file areas supplied */
-static boolean match(m, t, s, d, d_e, p_c, s_a)
-Anyptr m, t;
-sdb_rec *s;
-dir_rec *d;
-unsigned short d_e, p_c;
-uchar s_a;
+static boolean match(char far *mask, char far *tgt,
+		     SRCHREC_PTR search, DIRREC_PTR dirent,
+		     uint16_t d_e, uint16_t p_c,
+		     uint8_t s_a)
 {
   uchar i = 0, j = 0;
-  Char *mask = (Char *)m;
-  Char *tgt = (Char *)t;
-  void *TEMP;
 
+  //consolef("MATCH \"%ls\" \"%ls\"\n", mask, tgt);
   if (tgt[0] == '\0' || tgt[0] == '\\')
     return false;
   while (i < 11) {
     switch (mask[i]) {
-
     case '?':
       if (tgt[j] == '\0' || tgt[j] == '.' || tgt[j] == '\\') {
 	if (i == 8 && tgt[j] == '.')
 	  j++;
 	else
 	  i++;
-      } else {
+      }
+      else {
 	i++;
 	j++;
       }
@@ -944,52 +925,53 @@ uchar s_a;
   }
   if (tgt[j] != '\0' && tgt[j] != '\\')
     return false;
-  TEMP = mask;
-  memmove(s->srch_tmpl, &TEMP, 11L);
-  s->dir_entry = d_e;
-  s->srch_attr = s_a;
-  s->par_clstr = p_c;
-  s->drv_lett = drive_no | 0x80;
+  _fmemmove(search->pattern, mask, 11);
+  search->sequence = d_e;
+  search->attr_mask = s_a;
+  search->sector = p_c;
+  search->drive_num = drive_no | 0x80;
   i = 0;
   j = 0;
-  memset(d->fname, ' ', 11L);
+  _fmemset(dirent->name, ' ', 11);
   while (tgt[i] != '\0' && tgt[i] != '\\') {
     if (tgt[i] == '.') {
       j = 8;
       i++;
-    } else {
-      d->fname[j] = tgt[i];
+    }
+    else {
+      dirent->name[j] = tgt[i];
       i++;
       j++;
     }
   }
   switch (d_e) {
-
   case 0:
-    d->fattr = 0x8;
+    dirent->attr = 0x8;
     break;
 
   case 1:
-    d->fattr = 0x10;
+    dirent->attr = 0x10;
     break;
 
   case 2:
-    d->fattr = file_attr;
+    dirent->attr = file_attr;
     break;
   }
-  d->time_lstupd = file_time;
-  d->date_lstupd = file_date;
+  dirent->time = file_time;
+  dirent->date = file_date;
   switch (d_e) {
 
   case 0:
   case 1:
-    d->fsiz = 0;
+    dirent->size = 0;
     break;
 
   case 2:
-    d->fsiz = file_size;
+    dirent->size = file_size;
     break;
   }
+  dumpHex(search, sizeof(*search), 0);
+  dumpHex(dirent, sizeof(*dirent), 0);
   return true;
 }
 
@@ -998,12 +980,12 @@ uchar s_a;
 static void delfil()
 {
   uchar isrc, lsrc;
-  sdb_rec sdb;   /* These are dummies for the match procedure to hit */
-  dir_rec der;
+  SRCHREC sdb;   /* These are dummies for the match procedure to hit */
+  DIRREC der;
 
   lsrc = asclen(a1);
   isrc = lsrc;
-  if (!back_1(a1, &isrc)) {
+  if (!(isrc = back_1(a1, isrc))) {
     fail(3);
     return;
   }
@@ -1038,7 +1020,7 @@ static void opnfil()
 
   lsrc = asclen(a1);
   isrc = lsrc;
-  if (!back_1(a1, &isrc)) {
+  if (!(isrc = back_1(a1, isrc))) {
     fail(3);
     return;
   }
@@ -1050,7 +1032,7 @@ static void opnfil()
   }
   isrc++;
   memset(temp_name, '\0', 13L);
-  memmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
+  _fmemmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
   /* Check file names match */
   if (strncmp(temp_name, file_name, sizeof(fcbfnbuf))) {
     fail(2);
@@ -1060,10 +1042,10 @@ static void opnfil()
   /* Initialize supplied SFT entry */
   WITH = (sft_rec *)ptr((long)r.es, (long)r.di);
   file_attr = *(uchar *)ptr((long)r.ss, (long)r.sp);
-  if (dos_major == 3)
-    WITH->open_mode = ((sda3_rec *)sda)->open_mode & 0x7f;
+  if (_osmajor == 3)
+    WITH->open_mode = ((sda3_ptr) sda)->open_mode & 0x7f;
   else
-    WITH->open_mode = ((sda4_rec *)sda)->open_mode & 0x7f;
+    WITH->open_mode = ((sda4_ptr) sda)->open_mode & 0x7f;
   cnvt2fcb(temp_name, WITH->fcb_fn);
   /*   inc(file_opens); */
   WITH->f_size = file_size;
@@ -1074,7 +1056,7 @@ static void opnfil()
   WITH->attr_byte = file_attr;
   WITH->f_pos = 0;
   WITH->devdrv_ptr = NULL;
-  set_Owner(r.es, r.di);
+  set_Owner(MK_FP(r.es, r.di));
 }
 
 
@@ -1086,7 +1068,7 @@ static void creatfil()
 
   lsrc = asclen(a1);
   isrc = lsrc;
-  if (!back_1(a1, &isrc)) {
+  if (!(isrc = back_1(a1, isrc))) {
     fail(3);
     return;
   }
@@ -1103,12 +1085,13 @@ static void creatfil()
       return;
     }
     memset(file_name, '\0', 13L);
-    memmove(file_name, (&a1[isrc]), (long)(lsrc - isrc));
-  } else {
+    _fmemmove(file_name, (&a1[isrc]), (long)(lsrc - isrc));
+  }
+  else {
     if (ifile == isrc) {
       isrc++;
       memset(temp_name, '\0', 13L);
-      memmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
+      _fmemmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
       if (strncmp(temp_name, file_name, sizeof(fcbfnbuf))) {
 	fail(2);
 	return;
@@ -1142,7 +1125,7 @@ static void creatfil()
   WITH->f_time = 0;
   WITH->devdrv_ptr = NULL;
   WITH->attr_byte = file_attr;
-  set_Owner(r.es, r.di);
+  set_Owner(MK_FP(r.es, r.di));
 }
 
 
@@ -1155,14 +1138,14 @@ static void spopnfil()
 
   lsrc = asclen(a1);
   isrc = lsrc;
-  if (!back_1(a1, &isrc)) {
+  if (!(isrc = back_1(a1, isrc))) {
     fail(3);
     return;
   }
   if (!process_path(a1, isrc))
     return;
-  mode = ((sda4_rec *)sda)->spop_mode & 0x7f;
-  action = ((sda4_rec *)sda)->spop_act;
+  mode = ((sda4_ptr) sda)->spop_mode & 0x7f;
+  action = ((sda4_ptr) sda)->spop_act;
   /* First, check if file must or must not exist */
   if ((action & 0xf) == 0 && isrc != 0 || (action & 0xf0) == 0 && isrc == 0) {
     fail(5);
@@ -1180,12 +1163,13 @@ static void spopnfil()
       return;
     }
     memset(file_name, '\0', 13L);
-    memmove(file_name, (&a1[isrc]), (long)(lsrc - isrc));
-  } else {
+    _fmemmove(file_name, (&a1[isrc]), (long)(lsrc - isrc));
+  }
+  else {
     if (ifile == isrc) {
       isrc++;
       memset(temp_name, '\0', 13L);
-      memmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
+      _fmemmove(temp_name, (&a1[isrc]), (long)(lsrc - isrc));
       if (strncmp(temp_name, file_name, sizeof(fcbfnbuf))) {
 	fail(82);
 	return;
@@ -1228,56 +1212,63 @@ static void spopnfil()
   WITH->dir_entryno = 0;
   WITH->devdrv_ptr = NULL;
   WITH->attr_byte = file_attr;
-  set_Owner(r.es, r.di);
+  set_Owner(MK_FP(r.es, r.di));
 }
 
 
 /* FindFirst - subfunction 1Bh */
 static void ffirst()
 {
-  uchar isrc, lsrc;
-  sdb_rec *sdb;
-  dir_rec *der;
+  uchar isrc;
+  SRCHREC_PTR sdb;
+  DIRREC_PTR der;
   uchar sa, fa;
 
-  lsrc = asclen(a1);
-  isrc = lsrc;
-  if (!back_1(a1, &isrc)) {
+  //consolef("FFIRST 0\n");
+  isrc = asclen(a1);
+  if (!(isrc = back_1(a1, isrc))) {
     fail(3);
     return;
   }
+  //consolef("FFIRST 1: %i\n", isrc);
   if (!process_path(a1, isrc))
     return;
+  //consolef("FFIRST 2\n");
   a2 = max_path;
-  if (dos_major == 3) {
-    a1 = ((sda3_rec *)sda)->fcb_fn1;
-    sdb = &((sda3_rec *)sda)->sdb;
-    der = &((sda3_rec *)sda)->found_file;
-    sa = ((sda3_rec *)sda)->srch_attr;
-  } else {
-    a1 = ((sda4_rec *)sda)->fcb_fn1;
-    sdb = &((sda4_rec *)sda)->sdb;
-    der = &((sda4_rec *)sda)->found_file;
-    sa = ((sda4_rec *)sda)->srch_attr;
+  if (_osmajor == 3) {
+    a1 = ((sda3_ptr) sda)->fcb_fn1;
+    sdb = &((sda3_ptr) sda)->sdb;
+    der = &((sda3_ptr) sda)->found_file;
+    sa = ((sda3_ptr) sda)->srch_attr;
+  }
+  else {
+    a1 = ((sda4_ptr) sda)->fcb_fn1;
+    sdb = &((sda4_ptr) sda)->sdb;
+    der = &((sda4_ptr) sda)->found_file;
+    sa = ((sda4_ptr) sda)->srch_attr;
   }
   fa = file_attr & 0x1e;
   a2 += isrc + 1;
 
+  //consolef("FFIRST 3 %i %i %i\n", sa, isrc, iroot);
   /* First try and match volume label, if asked for */
-  if ((sa == 0x8 || (boolean)(sa & 0x8) && isrc == iroot) &&
+  if ((sa == 0x8 || ((sa & 0x8) && isrc == iroot)) &&
       match(a1, vollab, sdb, der, 0, isrc, sa))
     return;
 
+  //consolef("FFIRST 4\n");
   /* Then try the one possible subdirectory, if asked for and if it exists */
-  if ((boolean)(sa & 0x10) &&
+  if ((sa & 0x10) &&
       match(a1, a2, sdb, der, 1, isrc, sa))
     return;
 
+  //consolef("FFIRST 5\n");
   /* Finally try the one possible file, if asked for, if it exists, and if
      in this subdirectory */
-  if (ifile == isrc && (fa == 0 || (boolean)(sa & fa)) &&
+  if (ifile == isrc && (fa == 0 || (sa & fa)) &&
       match(a1, file_name, sdb, der, 2, isrc, sa))
     return;
+  //consolef("FFIRST 6\n");
 
   /* Otherwise report no more files */
   fail(18);
@@ -1288,22 +1279,24 @@ static void ffirst()
 static void fnext()
 {
   uchar fa;
-  sdb_rec *sdb;
-  dir_rec *der;
+  SRCHREC_PTR sdb;
+  DIRREC_PTR der;
 
-  if (dos_major == 3) {
-    sdb = &((sda3_rec *)sda)->sdb;
-    der = &((sda3_rec *)sda)->found_file;
-  } else {
-    sdb = &((sda4_rec *)sda)->sdb;
-    der = &((sda4_rec *)sda)->found_file;
+  consolef("FNEXT 1\n");
+  if (_osmajor == 3) {
+    sdb = &((sda3_ptr) sda)->sdb;
+    der = &((sda3_ptr) sda)->found_file;
   }
+  else {
+    sdb = &((sda4_ptr) sda)->sdb;
+    der = &((sda4_ptr) sda)->found_file;
+  }
+  consolef("FNEXT 2\n");
   fa = file_attr & 0x1e;
-  sdb->dir_entry++;
-  switch (sdb->dir_entry) {
-
+  sdb->sequence++;
+  switch (sdb->sequence) {
   case 1:
-    a2 = &max_path[sdb->par_clstr + 1];
+    a2 = &max_path[sdb->sector + 1];
     break;
 
   case 2:
@@ -1316,24 +1309,27 @@ static void fnext()
     break;
   }
 
+  consolef("FNEXT 3\n");
   /* First try the one possible subdirectory, if it exists. FNext can never
      match a volume label */
-  if (sdb->dir_entry == 1 && (boolean)(sdb->srch_attr & 0x10) &&
-      match(a1, a2, sdb, der, sdb->dir_entry, sdb->par_clstr,
-	    sdb->srch_attr))
+  if (sdb->sequence == 1 && (boolean)(sdb->attr_mask & 0x10) &&
+      match(a1, a2, sdb, der, sdb->sequence, sdb->sector,
+	    sdb->attr_mask))
     return;
 
+  consolef("FNEXT 4\n");
   /* Then try the one possible file, if exists, and if in this subdirectory */
-  if (sdb->dir_entry == 1) {
+  if (sdb->sequence == 1) {
     a2 = file_name;
-    sdb->dir_entry = 2;
+    sdb->sequence = 2;
   }
-  if (sdb->dir_entry == 2 && ifile == sdb->par_clstr &&
-      (fa == 0 || (boolean)(sdb->srch_attr & fa)) &&
-      match(a1, a2, sdb, der, sdb->dir_entry, sdb->par_clstr,
-	    sdb->srch_attr))
+  if (sdb->sequence == 2 && ifile == sdb->sector &&
+      (fa == 0 || (boolean)(sdb->attr_mask & fa)) &&
+      match(a1, a2, sdb, der, sdb->sequence, sdb->sector,
+	    sdb->attr_mask))
     return;
 
+  consolef("FNEXT 5\n");
   /* Otherwise return no more files */
   fail(18);
 }
@@ -1356,24 +1352,25 @@ static void skfmend()
 }
 
 
-static boolean call_for_us(es, di)
-unsigned short es, di;
+static boolean call_for_us(sft_rec far *rec)
 {
-  Anyptr p;
+  const char far *path;
 
-  if (((1L << ((long)fxn)) &
-       (((1L << ((long)_unlock + 1)) - (1L << ((long)_close))) |
-	(1L << ((long)_seek)))) != 0) {
-    return ((((sft_rec *)ptr((long)es, (long)di))->dev_info & 0x1f) == drive_no);
-  } else {
+  if ((fxn >= _close && fxn <= _unlock) || fxn == _seek) {
+    //consolef("CFU DRIVE: %c\n", (rec->dev_info & 0x1f) + 'A');
+    return ((rec->dev_info & 0x1f) == drive_no);
+  }
+  else {
     if (fxn == _inquiry)
       return true;
     else {
-      if (dos_major == 3)
-	p = ((sda3_rec *)sda)->drive_cdsptr;
+      if (_osmajor == 3)
+	path = ((sda3_rec far *) sda)->drive_cdsptr;
       else
-	p = ((sda4_rec *)sda)->drive_cdsptr;
-      return (strncmp((Char *)(&p), (Char *)(&max_path), sizeof(cdsidarr)) == 0);
+	path = ((sda4_rec far *) sda)->drive_cdsptr;
+      //consolef("CFU PATH \"%ls\"\n", path);
+      //consolef("OUR PATH: \"%s\"\n", max_path);
+      return (_fstrncmp(path, max_path, sizeof(cdsidarr)) == 0);
     }
   }
 }
@@ -1385,6 +1382,17 @@ struct LOC_redirector {
 } ;
 
 
+void set_intr_retval(uint16_t);
+#pragma aux set_intr_retval = \
+  "mov ss:[bp+22],ax" \
+  "test ax,ax"	      \
+  "jnz is_err"     \
+  "clc"		      \
+  "jmp done"	      \
+  "is_err: stc"    \
+  "done:"	      \
+  parm [ax]
+
 /* This is the main entry point for the redirector. The procedure is actually
    invoked from the Int 2F ISR stub via a PUSHF and a CALL FAR IMMEDIATE
    instruction to simulate an interrupt.  That way we have many of the
@@ -1392,26 +1400,25 @@ struct LOC_redirector {
    This procedure saves the registers into the regset variable, assesses if
    the call is for our drive, and if so, calls the appropriate routine. On
    exit, it restores the (possibly modified) register values. */
-static void redirector(_flags, _cs, _ip, _ax, _bx, _cx, _dx, _si, _di, _ds,
-		       _es, _bp_)
-unsigned short _flags, _cs, _ip, _ax, _bx, _cx, _dx, _si, _di, _ds, _es, _bp_;
+static void interrupt redirector(union INTPACK regs)
 {
   struct LOC_redirector V;
 
-  V._bp = _bp_;
+  V._bp = regs.x.bp;
   isr->our_drive = false;
   /* If we don't support the call, pretend we didn't see it...! */
-  if ((_ax & 255) > fxn_map_max)
-    return;
-  fxn = fxn_map[_ax & 255];
+  if (regs.h.ah != 0x11 || regs.h.al > fxn_map_max)
+    _chain_intr(prev_hndlr);
+  fxn = fxn_map[regs.h.al];
   if (fxn == _unsupported)
-    return;
+    _chain_intr(prev_hndlr);
   /* If the call isn't for our drive, jump out here... */
-  if (!call_for_us(_es, _di))
+  if (!call_for_us(MK_FP(regs.x.es, regs.x.di)))
     return;
+  consolef("REDIR FUNC 0x%02x/%02x\n", regs.h.ah, regs.h.al);
   /* Set up our full copy of the registers */
   isr->our_drive = true;
-  memmove((&r.bp), (&V._bp), sizeof(unsigned short) * 9L);
+  _fmemmove((&r.bp), (&V._bp), sizeof(unsigned short) * 9L);
   r.ss = isr->save_ss;
   r.sp = isr->save_sp;
   r.cs = isr->save_cs;
@@ -1504,14 +1511,16 @@ unsigned short _flags, _cs, _ip, _ax, _bx, _cx, _dx, _si, _di, _ds, _es, _bp_;
     break;
   }
   /* Restore the registers, including any that we have modified.. */
-  memmove((&V._bp), (&r.bp), sizeof(unsigned short) * 9L);
+  _fmemmove((&V._bp), (&r.bp), sizeof(unsigned short) * 9L);
   isr->save_ss = r.ss;
   isr->save_sp = r.sp;
   isr->save_cs = r.cs;
   isr->save_ip = r.ip;
   isr->real_fl = r.flags;
+  set_intr_retval(r.ax);
 }
 
+#if 0
 /* This procedure sets up our ISR stub as a structure on the heap. It
    also ensures that the structure is addressed from an offset of 0 so
    that the CS overridden offsets in the ISR code line up. Finally. it
@@ -1532,6 +1541,7 @@ static void init_isr_code()
   *((uint16_t *)&isr->ic[our_sp_ofs]) = our_sp;		// os(isr).o:=our_sp_ofs; word(i^):=our_sp;
   *((void far **)&isr->ic[prev_hndlr]) = p;		// os(isr).o:=prev_hndlr; pointer(i^):=p;
 }
+#endif
 
 #if 0
 Local uchar installed_2f()
@@ -1561,8 +1571,10 @@ static void init_vars()
   /* file_opens:=0; */
   /* Note that the assumption is that we lost 100h bytes of stack
      on entry to main */
+#if 0
   /* Initialise and fix-up the master copy of the ISR code */
   init_isr_code();
+#endif
   ifile = 0;
 }
 
@@ -1576,7 +1588,7 @@ static void set_path_entry()
 
   our_cds = lol->cds;
   cds_size = sizeof(cds4_rec);
-  if (dos_major == 3)
+  if (_osmajor == 3)
     cds_size = sizeof(cds3_rec);
   printf("CDS: 0x%08lx  size: %i\n", (uint32_t) our_cds, cds_size);
   our_cds = MK_FP(FP_SEG(our_cds), FP_OFF(our_cds) + cds_size * (drive_no - 1));
@@ -1592,10 +1604,8 @@ static void set_path_entry()
   our_cds->flags |= 0xc000L;   /* Network+Physical bits on ... */
   strcpy(strbuf, cds_id);
   strbuf[strlen(strbuf) - 3] = (Char)('@' + drive_no);
-  _fmemmove(our_cds->curr_path, strbuf, strlen(strbuf));
-  _fmemmove(max_path, our_cds->curr_path, strlen(strbuf));
-  our_cds->curr_path[strlen(strbuf)] = '\0';
-  max_path[strlen(strbuf)] = '\0';
+  _fstrcpy(our_cds->curr_path, strbuf);
+  _fstrcpy(max_path, strbuf);
   our_cds->root_ofs = strlen(strbuf) - 1;
   iroot = our_cds->root_ofs;
   lmax = iroot;
@@ -1629,7 +1639,8 @@ static void settle_down()
   uint32_t far *ptr;
 
   /* Plug ourselves into Int 2F */
-  setintvec(0x2f, isr);
+  getintvec(0x2f, prev_hndlr);
+  setintvec(0x2f, redirector);
   _SETIO(printf("Phantom drive installed as %c:\n", drive[0]) >= 0,
 	 FileWriteError);
   /* Find ourselves a free interrupt to call our own. Without it, future
@@ -1678,8 +1689,7 @@ static void do_unload()
   getintvec(0x2f, p);
   if (p != 0)
     failprog("2F superceded...");
-  p = MK_FP(FP_SEG(p), prev_hndlr);
-  setintvec(0x2f, *(Anyptr *)p);
+  setintvec(0x2f, prev_hndlr);
   getintvec(i, p);
   drive_no = ((sig_rec *)p)->drive_no;
   r.x.ax = 0x4900;
@@ -1689,7 +1699,7 @@ static void do_unload()
     _SETIO(printf("Could not free main memory...\n") >= 0, FileWriteError);
   setintvec(i, NULL);
   cds = lol->cds;
-  if (dos_major == 3)
+  if (_osmajor == 3)
     cds += sizeof(cds3_rec) * (drive_no - 1);
   else
     cds += sizeof(cds4_rec) * (drive_no - 1);
