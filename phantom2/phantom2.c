@@ -2305,29 +2305,59 @@ void interrupt far redirector(ALL_REGS entry_regs);
 	free its real and XMS memory. */
 
 #if 1
+static uint ul_save_ss, ul_save_sp;
+static int ul_i;
+
+void exit_ret()
+{
+  _asm {
+    // We should arrive back here - restore SS:SP
+    mov ax, seg ul_save_ss;
+    mov ds, ax;
+    mov ss, ul_save_ss;
+    mov sp, ul_save_sp;
+
+    // restore the registers
+    pop bp;
+    pop di;
+    pop si;
+    pop ds;
+    pop es;
+
+    // Set current PSP back to us.
+    mov bx, _psp;
+    mov ah, 0x50;
+    int 0x21;
+  }
+
+  _dos_setvect(ul_i, NULL);
+//      our_drive_str[0] = (char) (our_drive_no + '@');  // ref: DR_TOO_HIGH
+  our_drive_str[0] = (char) (our_drive_no + 'A');
+  print_string(our_drive_str, FALSE);
+  print_string(" is now invalid.", TRUE);
+}
+
 void unload_latest()
 {
-  int i;
   INTVECT p_vect;
   V3_CDS_PTR cds_ptr;
   SIGREC_PTR sig_ptr;
   uint psp;
-  static uint save_ss, save_sp;
 
   // Note that we step backwards to allow unloading of Multiple copies
   // in reverse order to loading, so that the Int 2Fh chain remains
   // intact.
-  for (i = 0x66; i >= 0x60; i--) {
+  for (ul_i = 0x66; ul_i >= 0x60; ul_i--) {
     long far *p;
 
-    p = (long far *) MK_FP(0, ((uint) i * 4));
+    p = (long far *) MK_FP(0, ((uint) ul_i * 4));
     sig_ptr = (SIGREC_PTR) * p;
     if (_fmemcmp(sig_ptr->signature, (uchar far *) sigrec.signature,
                  sizeof(sigrec.signature)) == 0)
       break;
   }
 
-  if (i == 0x5f)
+  if (ul_i == 0x5f)
     failprog("Phantom not loaded.");
 
   p_vect = _dos_getvect(0x2f);
@@ -2338,7 +2368,7 @@ void unload_latest()
 
   p_vect = (INTVECT) sig_ptr->prev_handler;
   _dos_setvect(0x2f, p_vect);
-  p_vect = _dos_getvect(i);
+  p_vect = _dos_getvect(ul_i);
   psp = ((SIGREC_PTR) p_vect)->psp;
   our_drive_no = ((SIGREC_PTR) p_vect)->drive_no;
 
@@ -2393,41 +2423,15 @@ void unload_latest()
     int 0x21;
 
     // Save SS:SP
-    mov ax, seg save_ss;
+    mov ax, seg ul_save_ss;
     mov ds, ax;
-    mov save_ss, ss;
-    mov save_sp, sp;
+    mov ul_save_ss, ss;
+    mov ul_save_sp, sp;
 
     // and terminate
     mov ax, 0x4c00;
     int 0x21;
-  
-exit_ret:
-
-    // We should arrive back here - restore SS:SP
-    mov ax, seg save_ss;
-    mov ds, ax;
-    mov ss, save_ss;
-    mov sp, save_sp;
-
-    // restore the registers
-    pop bp;
-    pop di;
-    pop si;
-    pop ds;
-    pop es;
-
-    // Set current PSP back to us.
-    mov bx, _psp;
-    mov ah, 0x50;
-    int 0x21;
   }
-
-  _dos_setvect(i, NULL);
-//      our_drive_str[0] = (char) (our_drive_no + '@');  // ref: DR_TOO_HIGH
-  our_drive_str[0] = (char) (our_drive_no + 'A');
-  print_string(our_drive_str, FALSE);
-  print_string(" is now invalid.", TRUE);
 }
 #else
 void unload_latest();
