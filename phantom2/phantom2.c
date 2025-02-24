@@ -28,6 +28,8 @@
 #include <bios.h>
 #include <time.h>
 
+#include "../../fujinet-rs232/sys/print.h"
+
 /* ****************************************************
    Basic typedefs
    **************************************************** */
@@ -88,7 +90,7 @@ char *usage_string =
    Typedefs and structures
    **************************************************** */
 
-typedef void (far *FARPROC) (void);
+typedef int (far *FARPROC)(void);
 
 #pragma pack(1)
 
@@ -255,6 +257,9 @@ typedef struct {
 #ifdef __BORLANDC__
   uint bp, di, si, ds, es, dx, cx, bx, ax;
 #else
+#ifdef __WATCOMC__
+  uint gs, fs;
+#endif /* __WATCOMC__ */
   uint es, ds, di, si, bp, sp, bx, dx, cx, ax;
 #endif
   uint ip, cs, flags;
@@ -315,6 +320,8 @@ DIRREC_PTR dirrec_ptr_2;        /* ptr to 1st found dir entry area in SDA */
 
 /* Other global data items */
 FARPROC xms_entrypoint = NULL;  /* obtained from Int 2fh/4310h */
+#pragma aux xms_entrypoint \
+  parm [ax]
 ALL_REGS r;                     /* Global save area for all caller's regs */
 uchar our_drive_no;             /* A: is 1, B: is 2, etc. */
 char our_drive_str[3] = " :";   /* Our drive letter string */
@@ -450,46 +457,42 @@ char *my_hex(ulong num, int len)
 
 /* ------------------- Internal DOS calls ------------ */
 
-#if 1
 ulong dos_ftime(void)
 {
   uint r_es = r.es, r_di = r.di, r_ds = r.ds;
+  int result_lo, result_hi;
 
 
   _asm {
-    mov save_sp, sp             /* Save current stack pointer. */
-      cli
-      mov ss, dos_ss         /* Establish DOS's stack, current */
-      mov sp, dos_sp             /* when we got called. */
-      sti
-      mov ax, 0x120d         /* Get time/date. */
-      push di                    /* Subfunction 120C destroys di */
-      push ds                    /* It needs DS to be DOS's DS, for DOS 5.0 */
-      push es
-      mov es, r_es
-      mov di, r_di
-      mov ds, r_ds
-      int 0x2F
-      xchg ax, dx
-      pop es
-      pop ds  /* Restore DS */
-      pop di
-      mov bx, ds          /* Restore SS (same as DS) */
-      cli
-      mov ss, bx
-      mov sp, save_sp     /* and stack pointer (which we saved). */
-      sti
-      ret
-      }
+    mov save_sp, sp;             /* Save current stack pointer. */
+    cli;
+    mov ss, dos_ss;         /* Establish DOS's stack, current */
+    mov sp, dos_sp;             /* when we got called. */
+    sti;
+    mov ax, 0x120d;         /* Get time/date. */
+    push di;                    /* Subfunction 120C destroys di */
+    push ds;                    /* It needs DS to be DOS's DS, for DOS 5.0 */
+    push es;
+    mov es, r_es;
+    mov di, r_di;
+    mov ds, r_ds;
+    int 0x2F;
+    xchg ax, dx;
+    pop es;
+    pop ds;  /* Restore DS */
+    pop di;
+    mov bx, ds;          /* Restore SS (same as DS) */
+    cli;
+    mov ss, bx;
+    mov sp, save_sp;     /* and stack pointer (which we saved). */
+    sti;
+    mov result_lo, ax;
+    mov result_hi, dx;
+  }
 
-  // Never reaches here
-  return 0;  
+  return (ulong) MK_FP(result_hi, result_lo);
 }
-#else
-ulong dos_ftime(void);
-#endif
 
-#if 1
 void set_sft_owner(SFTREC_PTR sft)
 {
   uint r_ds = r.ds;
@@ -518,38 +521,31 @@ void set_sft_owner(SFTREC_PTR sft)
     pop es;
   }
 }
-#else
-void set_sft_owner(SFTREC_PTR sft);
-#endif
 
-#if 1
 // Does fcbname_ptr point to a device name?
 int is_a_character_device(uint dos_ds)
 {
+  int result;
+
   _asm {
-    mov ax, 0x1223;              /* Search for device name. */
-    push ds;                    /* It needs DS to be DOS's DS, for DOS 5.0 */
+    mov ax, 0x1223;		/* Search for device name. */
+    push ds;				/* It needs DS to be DOS's DS, for DOS 5.0 */
     mov ds, dos_ds;
     int 0x2F;
-    pop ds;     /* Restore DS */
+    pop ds;				/* Restore DS */
     jnc is_indeed;
-    xor ax, ax;
-    ret
-  is_indeed:
-    mov ax, TRUE;
-    ret;
+    mov result, FALSE;
+    jmp done;
+ is_indeed:
+    mov result, TRUE;
+  done:
   }
 
-  // Never reaches here
-  return 0;
+  return result;
 }
-#else
-int is_a_character_device(uint dos_ds);
-#endif
 
 /* ------- XMS functions ------------------------------- */
 
-#if 1
 /* if XMS present, store entry point in xms_entrypoint */
 int xms_is_present(void)
 {
@@ -561,22 +557,22 @@ int xms_is_present(void)
   available = FALSE;
 
   _asm {
-  mov ax, 0x4300 
-    int 0x2f
-    cmp al, 0x80 
-    je present
-    jmp done
+    mov ax, 0x4300;
+    int 0x2f;
+    cmp al, 0x80;
+    je present;
+    jmp done;
 
  present:
-    mov available, TRUE
+    mov available, TRUE;
 
-    mov ax, 0x4310 ;
+    mov ax, 0x4310;
     int 0x2f;
     push ds;
     mov ax, seg xms_entrypoint;
     mov ds, ax;
     mov word ptr xms_entrypoint, bx;
-    mov word ptr xms_entrypoint + 2, es;
+    mov word ptr xms_entrypoint+2, es;
     pop ds;
 
   done:
@@ -584,66 +580,39 @@ int xms_is_present(void)
 
   return available;
 }
-#else
-int xms_is_present(void);
-#endif
 
-#if 1
 /* Return size of largest free block. Return 0 if error
 	Ignore the 'No return value' compiler warning for this function. */
 uint xms_kb_avail(void)
 {
   _asm {
-    push ds;
-    mov ax, seg xms_entrypoint;
-    mov ds, ax;
     mov ah, 0x08;
-
-    call [xms_entrypoint];
-    pop ds;
-    ret;
   }
-
-  // Never reaches here
-  return 0;
+  return xms_entrypoint();
 }
-#else
-uint xms_kb_avail(void);
-#endif
 
-#if 1
 /* Allocate a chunk of XMS and return a handle */
 int xms_alloc_block(uint block_size, uint *handle_ptr)
 {
   int success = FALSE;
-  uint handle;
+  uint handle, result;
 
   _asm {
-    push ds;
-    mov ax, seg xms_entrypoint;
-    mov ds, ax;
     mov ah, 0x09;
     mov dx, block_size;
-
-    call[xms_entrypoint];
-    pop ds;
-    cmp ax, 0x0000;
-    jne done;
-    mov ax, success;
-    ret
-done:
+  }
+  result = xms_entrypoint();
+  _asm {
     mov handle, dx;
   }
+  if (result) {
+    *handle_ptr = handle;
+    success = TRUE;
+  }
 
-  *handle_ptr = handle;
-  success = TRUE;
   return success;
 }
-#else
-int xms_alloc_block(uint block_size, uint *handle_ptr);
-#endif
 
-#if 1
 /* free XMS memory previously allocated */
 int xms_free_block(uint handle)
 {
@@ -656,7 +625,7 @@ int xms_free_block(uint handle)
     mov ah, 0x0A;
     mov dx, handle;
 
-    call[xms_entrypoint];
+    call dword ptr xms_entrypoint;
     pop ds;
     cmp ax, 0x0000;
     je done;
@@ -666,15 +635,12 @@ int xms_free_block(uint handle)
 
   return success;
 }
-#else
-int xms_free_block(uint handle);
-#endif
 
-#if 1
 /* Copy from XMS into real memory */
 int xms_copy_to_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
 {
   XMSCOPY xms;
+  int result;
 
   if (len == 0)
     return TRUE;
@@ -689,45 +655,41 @@ int xms_copy_to_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
   xms.dest_ofs = (ulong) buf;
 
   _asm {
-    push es;
-    push ds;
-    push si;
-    mov ax, seg xms_entrypoint;
-    mov es, ax;
-    push ss;
-    pop ds;
+    push	es;
+    push	ds;
+    push	si;
+    mov		ax, seg xms_entrypoint;
+    mov		es, ax;
+    push	ss;
+    pop		ds;
 #if 0
-    mov si, bp;
-    add si, offset xms;
+    mov		si, bp;
+    add		si, offset xms;
 #else
-    lea si, xms;
+    lea		si, xms;
 #endif
-    mov ah, 0x0B;
-    call es:[xms_entrypoint];
-    pop si;
-    pop ds;
-    pop es;
-    cmp ax, 0x0000;
-    je nogood;
-    mov ax, TRUE;
+    mov 	ah, 0Bh;
+    call	dword ptr [xms_entrypoint];
+    pop		si;
+    pop		ds;
+    pop		es;
+    cmp		ax, 0000h;
+    je		nogood;
+    mov result, TRUE;
+    jmp done;
   nogood:
-    xor ax, ax;
+    mov result, FALSE;
   done:
-    ret;
   }
 
-  // Never reaches here
-  return 0;
+  return result;
 }
-#else
-int xms_copy_to_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf);
-#endif
 
-#if 1
-/* Copy from real memory into XMS */
+
 int xms_copy_fm_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
 {
   XMSCOPY xms;
+  int result;
 
   if (len == 0)
     return TRUE;
@@ -742,39 +704,35 @@ int xms_copy_fm_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
   xms.dest_ofs = ofs_in_handle;
 
   _asm {
-    push es;
-    push ds;
-    push si;
-    mov ax, seg xms_entrypoint;
-    mov es, ax;
-    push ss;
-    pop ds;
+    push	es;
+    push	ds;
+    push	si;
+    mov		ax, seg xms_entrypoint;
+    mov		es, ax;
+    push	ss;
+    pop		ds;
 #if 0
-    mov si, bp;
-    add si, offset xms;
+    mov		si, bp;
+    add		si, offset xms;
 #else
-    lea si, xms;
+    lea		si, xms;
 #endif
-    mov ah, 0x0B;
-    call es:[xms_entrypoint];
-    pop si;
-    pop ds;
-    pop es;
-    cmp ax, 0x0000;
-    je nogood;
-    mov ax, TRUE;
+    mov 	ah, 0Bh;
+    call	dword ptr [xms_entrypoint];
+    pop		si;
+    pop		ds;
+    pop		es;
+    cmp		ax, 0000h;
+    je		nogood;
+    mov result, TRUE;
+    jmp done;
   nogood:
-    xor ax, ax;
+    mov result, FALSE;
   done:
-    ret;
   }
 
-  // Never reaches here
-  return 0;
+  return result;
 }
-#else
-int xms_copy_fm_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf);
-#endif
 
 /* ------ File system functions ------------------------ */
 
@@ -878,6 +836,7 @@ void set_up_xms_disk(void)
 {
   ulong count, ofs;
   uint len;
+  
 
   if (!xms_is_present())
     failprog("XMS not present.");
@@ -1330,7 +1289,6 @@ int contains_wildcards(char far *path)
 	DOS List of lists. We only run on versions of DOS >= 3.10, so
 	fail otherwise */
 
-#if 1
 void get_dos_vars(void)
 {
   uint segmnt;
@@ -1365,9 +1323,6 @@ void get_dos_vars(void)
 
   lolptr = (LOLREC_PTR) MK_FP(segmnt, ofset);
 }
-#else
-void get_dos_vars(void);
-#endif
 
 int is_call_for_us(uint es, uint di, uint ds)
 {
@@ -1419,25 +1374,21 @@ int is_call_for_us(uint es, uint di, uint ds)
   return ret;
 }
 
-#if 1
 /* Check to see that we are allowed to install */
 void is_ok_to_load(void)
 {
+  int result;
+
   _asm {
     mov ax, 0x1100;
     int 0x2f;
-    cmp ax, 1;
-    je fail_inst;
-    ret;
-  fail_inst:
+    mov result, ax;
   }
 
-  failprog("Not OK to install a redirector...");
+  if (result == 1)
+    failprog("Not OK to install a redirector...");
   return;
 }
-#else
-void is_ok_to_load(void);
-#endif
 
 /* This is where we do the initializations of the DOS structures
 	that we need in order to fit the mould */
@@ -2227,7 +2178,6 @@ PROC dispatch_table[] = {
 
 /* -------------------------------------------------------------*/
 
-#if 1
 /* This is the main entry point for the redirector. It assesses if
    the call is for our drive, and if so, calls the appropriate routine. On
    return, it restores the (possibly modified) register values. */
@@ -2258,15 +2208,23 @@ void interrupt far redirector(ALL_REGS entry_regs)
 
   stack_param_ptr = (uint far *) MK_FP(dos_ss, save_bp + sizeof(ALL_REGS));
 
-  _asm {
-    mov dos_sp, sp;
-    mov ax, ds;
-    cli;
-    mov ss, ax;   // New stack segment is in Data segment.
-    mov sp, offset our_stack + STACK_SIZE - 2;
-    sti;
+  {
+    uint my_sp = FP_OFF(our_stack) + STACK_SIZE - 2;
+    
+    _asm {
+      mov dos_sp, sp;
+      mov ax, ds;
+      cli;
+      mov ss, ax;   // New stack segment is in Data segment.
+#if 0
+      mov sp, offset our_stack + STACK_SIZE - 2;
+#else
+      mov sp, my_sp;
+#endif
+      sti;
+    }
   }
-  
+
   // Expect success!
   succeed();
 
@@ -2275,8 +2233,8 @@ void interrupt far redirector(ALL_REGS entry_regs)
   if (filename_is_char_device)
     fail(5);
   else
-    dispatch_table[curr_fxn] ();
-
+    dispatch_table[curr_fxn]();
+  
   // Switch the stack back
   _asm {
     cli;
@@ -2294,9 +2252,6 @@ void interrupt far redirector(ALL_REGS entry_regs)
  chain_on:
   _chain_intr(prev_int2f_vector);
 }
-#else
-void interrupt far redirector(ALL_REGS entry_regs);
-#endif
 
 /* ---- Unload functionality --------------*/
 
@@ -2304,7 +2259,6 @@ void interrupt far redirector(ALL_REGS entry_regs);
 	chain if possible, make the CDS reflect an invalid drive, and
 	free its real and XMS memory. */
 
-#if 1
 static uint ul_save_ss, ul_save_sp;
 static int ul_i;
 
@@ -2433,9 +2387,6 @@ void unload_latest()
     int 0x21;
   }
 }
-#else
-void unload_latest();
-#endif
 
 /* ------- TSR termination routines -------- */
 
