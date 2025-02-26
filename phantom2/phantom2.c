@@ -1,23 +1,23 @@
-/*	******************************************************
+/*******************************************************
 
-	PHANTOM.C - A network-redirector based XMS Ram Disk
-	Copyright (c) David Maxey 1993.  All rights reserved.
-	From "Undocumented DOS", 2nd edition (Addison-Wesley, 1993)
+ PHANTOM.C - A network-redirector based XMS Ram Disk
+ Copyright (c) David Maxey 1993.  All rights reserved.
+ From "Undocumented DOS", 2nd edition (Addison-Wesley, 1993)
 
-	Much of this code is explained in depth in Undocumented
-	DOS, 2nd edition, chapter 8, which has a 60-page description
-	of the network redirector, and an in-depth examination of
-	how Phantom handles file read, open, ffirst, cd, and md.
-	UndocDOS also contains a full specification for the redirector
-	interface.
+ Much of this code is explained in depth in Undocumented
+ DOS, 2nd edition, chapter 8, which has a 60-page description
+ of the network redirector, and an in-depth examination of
+ how Phantom handles file read, open, ffirst, cd, and md.
+ UndocDOS also contains a full specification for the redirector
+ interface.
 
-	07/25/93 - Drive number should be one less. AES found using
-				FILES/USEFCB. Porbably same as Markun/LanMan
-				problem. Search for ref: DR_TOO_HIGH
+ 07/25/93 - Drive number should be one less. AES found using
+            FILES/USEFCB. Porbably same as Markun/LanMan
+            problem. Search for ref: DR_TOO_HIGH
 
-	Requires Microsoft C.  (Sorry, Borland users.)
+ Requires Microsoft C.  (Sorry, Borland users.)
 
-	****************************************************** */
+*******************************************************/
 
 #include <stdlib.h>
 #include <dos.h>
@@ -27,8 +27,6 @@
 #include <fcntl.h>
 #include <bios.h>
 #include <time.h>
-
-#include "../../fujinet-rs232/sys/print.h"
 
 /* ****************************************************
    Basic typedefs
@@ -42,32 +40,32 @@ typedef unsigned long ulong;
    Constants and Macros
    **************************************************** */
 
-#define		TRUE				1
-#define		FALSE				0
+#define         TRUE                            1
+#define         FALSE                           0
 
-#define		STACK_SIZE			1024
-#define		FCARRY				0x0001
-#define		SECTOR_SIZE			1024    // 1024b/sector allows for 64M of XMS
-#define		FATPAGE_SIZE		128
-#define		ROOTDIR_ENTRIES		128
-#define		MIN_DISK_SIZE		128     // Don't load unless 128kb XMS free
-#define		DEF_DISK_SIZE		0xFFFE  // Default attempted allocation is_all
-#define		MAX_FXN_NO			0x2E
+#define         STACK_SIZE                      1024
+#define         FCARRY                          0x0001
+#define         SECTOR_SIZE                     1024    // 1024b/sector allows for 64M of XMS
+#define         FATPAGE_SIZE            128
+#define         ROOTDIR_ENTRIES         128
+#define         MIN_DISK_SIZE           128     // Don't load unless 128kb XMS free
+#define         DEF_DISK_SIZE           0xFFFE  // Default attempted allocation is_all
+#define         MAX_FXN_NO                      0x2E
 
 #ifndef MK_FP
 #define MK_FP(a,b)  ((void far *)(((ulong)(a) << 16) | (b)))
 #endif
 
-#define		FREE_SECTOR_CHAIN(sec)	\
-	while ((sec) != 0xFFFF) (sec) = set_next_sector((sec), 0)
+#define         FREE_SECTOR_CHAIN(sec)  \
+        while ((sec) != 0xFFFF) (sec) = set_next_sector((sec), 0)
 
-#define get_sector(sec, buf)		\
-	xms_copy_to_real(xms_handle, (ulong) SECTOR_SIZE * (sec), \
-		SECTOR_SIZE, (uchar far *) (buf))
+#define get_sector(sec, buf)            \
+        xms_copy_to_real(xms_handle, (ulong) SECTOR_SIZE * (sec), \
+                SECTOR_SIZE, (uchar far *) (buf))
 
-#define put_sector(sec, buf)		\
-	xms_copy_fm_real(xms_handle, (ulong) SECTOR_SIZE * (sec), \
-		SECTOR_SIZE, (uchar far *) (buf))
+#define put_sector(sec, buf)            \
+        xms_copy_fm_real(xms_handle, (ulong) SECTOR_SIZE * (sec), \
+                SECTOR_SIZE, (uchar far *) (buf))
 
 char *signon_string =
   "\r\n"
@@ -171,7 +169,7 @@ typedef struct {
   long file_size;
 } DIRREC, far *DIRREC_PTR;
 
-#define		DIRREC_PER_SECTOR			(SECTOR_SIZE / sizeof(DIRREC))
+#define         DIRREC_PER_SECTOR                       (SECTOR_SIZE / sizeof(DIRREC))
 
 /* Swappable DOS Area - DOS VERSION 3.xx */
 
@@ -251,8 +249,8 @@ typedef struct {
 } LOCKREC, far *LOCKREC_PTR;
 
 /* The following structure is compiler specific, and maps
-	onto the registers pushed onto the stack for an interrupt
-	function. */
+        onto the registers pushed onto the stack for an interrupt
+        function. */
 typedef struct {
 #ifdef __BORLANDC__
   uint bp, di, si, ds, es, dx, cx, bx, ax;
@@ -269,29 +267,29 @@ typedef struct {
 
 /* all the calls we need to support are in the range 0..2Eh */
 /* This serves as a list of the function types that we support */
-#define		_inquiry		0x00
-#define		_rd			0x01
-#define		_md			0x03
-#define		_cd			0x05
-#define		_clsfil			0x06
-#define		_cmmtfil		0x07
-#define		_readfil		0x08
-#define		_writfil		0x09
-#define		_lockfil		0x0A
-#define		_unlockfil		0x0B
-#define		_dskspc			0x0C
-#define		_setfatt		0x0E
-#define		_getfatt		0x0F
-#define		_renfil			0x11
-#define		_delfil			0x13
-#define		_opnfil			0x16
-#define		_creatfil		0x17
-#define		_ffirst			0x1B
-#define		_fnext			0x1C
-#define		_skfmend		0x21
-#define		_unknown_fxn_2D	0x2D
-#define		_spopnfil		0x2E
-#define		_unsupported	0xFF
+#define         _inquiry                0x00
+#define         _rd                     0x01
+#define         _md                     0x03
+#define         _cd                     0x05
+#define         _clsfil                 0x06
+#define         _cmmtfil                0x07
+#define         _readfil                0x08
+#define         _writfil                0x09
+#define         _lockfil                0x0A
+#define         _unlockfil              0x0B
+#define         _dskspc                 0x0C
+#define         _setfatt                0x0E
+#define         _getfatt                0x0F
+#define         _renfil                 0x11
+#define         _delfil                 0x13
+#define         _opnfil                 0x16
+#define         _creatfil               0x17
+#define         _ffirst                 0x1B
+#define         _fnext                  0x1C
+#define         _skfmend                0x21
+#define         _unknown_fxn_2D 0x2D
+#define         _spopnfil               0x2E
+#define         _unsupported    0xFF
 
 typedef void (interrupt far *INTVECT) ();
 typedef void (*PROC)(void);
@@ -301,11 +299,11 @@ typedef void (*PROC)(void);
    ************************************************ */
 
 /* This is declared in the compiler startup code to mark the
-	end of the data segment. */
+        end of the data segment. */
 extern uint end;
 
 /* these are version independent pointers to various frequently used
-	locations within the various DOS structures */
+        locations within the various DOS structures */
 uchar far *sda_ptr;             /* ptr to SDA */
 char far *current_path;         /* ptr to current path in CDS */
 char far *filename_ptr;         /* ptr to 1st filename area in SDA */
@@ -457,21 +455,24 @@ char *my_hex(ulong num, int len)
 
 /* ------------------- Internal DOS calls ------------ */
 
+uint r_es, r_di, r_ds;
 ulong dos_ftime(void)
 {
-  uint r_es = r.es, r_di = r.di, r_ds = r.ds;
+
   int result_lo, result_hi;
 
 
+  r_es = r.es, r_di = r.di, r_ds = r.ds;
+
   _asm {
-    mov save_sp, sp;             /* Save current stack pointer. */
+    mov save_sp, sp;    /* Save current stack pointer. */
     cli;
-    mov ss, dos_ss;         /* Establish DOS's stack, current */
-    mov sp, dos_sp;             /* when we got called. */
+    mov ss, dos_ss;     /* Establish DOS's stack, current */
+    mov sp, dos_sp;     /* when we got called. */
     sti;
-    mov ax, 0x120d;         /* Get time/date. */
-    push di;                    /* Subfunction 120C destroys di */
-    push ds;                    /* It needs DS to be DOS's DS, for DOS 5.0 */
+    mov ax, 0x120d;     /* Get time/date. */
+    push di;            /* Subfunction 120C destroys di */
+    push ds;            /* It needs DS to be DOS's DS, for DOS 5.0 */
     push es;
     mov es, r_es;
     mov di, r_di;
@@ -479,12 +480,12 @@ ulong dos_ftime(void)
     int 0x2F;
     xchg ax, dx;
     pop es;
-    pop ds;  /* Restore DS */
+    pop ds;             /* Restore DS */
     pop di;
-    mov bx, ds;          /* Restore SS (same as DS) */
+    mov bx, ds;         /* Restore SS (same as DS) */
     cli;
     mov ss, bx;
-    mov sp, save_sp;     /* and stack pointer (which we saved). */
+    mov sp, save_sp;    /* and stack pointer (which we saved). */
     sti;
     mov result_lo, ax;
     mov result_hi, dx;
@@ -495,14 +496,13 @@ ulong dos_ftime(void)
 
 void set_sft_owner(SFTREC_PTR sft)
 {
-  uint r_ds = r.ds;
-
+  r_ds = r.ds;
 
   _asm {
     push es;
     push di;
     les di, sft;
-    mov save_sp, sp;	/* Save current stack pointer. */
+    mov save_sp, sp;    /* Save current stack pointer. */
     cli;
     mov ss, dos_ss;     /* Establish DOS's stack, current */
     mov sp, dos_sp;     /* when we got called. */
@@ -511,7 +511,7 @@ void set_sft_owner(SFTREC_PTR sft)
     push ds;            /* It needs DS to be DOS's DS, for DOS 5.0 */
     mov ds, r_ds;
     int 0x2F;
-    pop bx;		/* Restore DS */
+    pop bx;             /* Restore DS */
     mov ds, bx;         /* Restore SS (same as DS) */
     cli;
     mov ss, bx;
@@ -528,11 +528,11 @@ int is_a_character_device(uint dos_ds)
   int result;
 
   _asm {
-    mov ax, 0x1223;		/* Search for device name. */
-    push ds;				/* It needs DS to be DOS's DS, for DOS 5.0 */
+    mov ax, 0x1223;     /* Search for device name. */
+    push ds;            /* It needs DS to be DOS's DS, for DOS 5.0 */
     mov ds, dos_ds;
     int 0x2F;
-    pop ds;				/* Restore DS */
+    pop ds;             /* Restore DS */
     jnc is_indeed;
     mov result, FALSE;
     jmp done;
@@ -582,7 +582,7 @@ int xms_is_present(void)
 }
 
 /* Return size of largest free block. Return 0 if error
-	Ignore the 'No return value' compiler warning for this function. */
+        Ignore the 'No return value' compiler warning for this function. */
 uint xms_kb_avail(void)
 {
   _asm {
@@ -636,6 +636,62 @@ int xms_free_block(uint handle)
   return success;
 }
 
+extern __segment getDS(void);
+#pragma aux getDS = \
+    "mov ax, ds";
+
+int xms_copy(XMSCOPY *xms)
+{
+  int result;
+  uint my_ds = FP_SEG(xms), my_si = FP_OFF(xms);
+
+#if 0
+  _asm {
+    push        es;
+    push        ds;
+    push        si;
+    mov         ax, seg xms_entrypoint;
+    mov         es, ax;
+    push        ss;
+    pop         ds;
+#if 0
+    mov         si, bp;
+    add         si, offset xms;
+#else
+    mov si, my_si;
+#endif
+    mov         ah, 0Bh;
+    call        dword ptr [xms_entrypoint];
+    pop         si;
+    pop         ds;
+    pop         es;
+    cmp         ax, 0000h;
+    je          nogood;
+    mov result, TRUE;
+    jmp done;
+  nogood:
+    mov result, FALSE;
+  done:
+  }
+
+  return result;
+#else
+  _asm {
+    push ds;
+    push si;
+    mov ds, my_ds;
+    mov si, my_si;
+    mov ah, 0x0b;
+    call dword ptr [xms_entrypoint];
+    pop si;
+    pop ds;
+    mov result, ax;
+  }
+
+  return result == 1;
+#endif
+}
+
 /* Copy from XMS into real memory */
 int xms_copy_to_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
 {
@@ -654,42 +710,12 @@ int xms_copy_to_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
   xms.dest_hndle = 0;
   xms.dest_ofs = (ulong) buf;
 
-  _asm {
-    push	es;
-    push	ds;
-    push	si;
-    mov		ax, seg xms_entrypoint;
-    mov		es, ax;
-    push	ss;
-    pop		ds;
-#if 0
-    mov		si, bp;
-    add		si, offset xms;
-#else
-    lea		si, xms;
-#endif
-    mov 	ah, 0Bh;
-    call	dword ptr [xms_entrypoint];
-    pop		si;
-    pop		ds;
-    pop		es;
-    cmp		ax, 0000h;
-    je		nogood;
-    mov result, TRUE;
-    jmp done;
-  nogood:
-    mov result, FALSE;
-  done:
-  }
-
-  return result;
+  return xms_copy(&xms);
 }
-
 
 int xms_copy_fm_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
 {
   XMSCOPY xms;
-  int result;
 
   if (len == 0)
     return TRUE;
@@ -703,35 +729,7 @@ int xms_copy_fm_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
   xms.dest_hndle = handle;
   xms.dest_ofs = ofs_in_handle;
 
-  _asm {
-    push	es;
-    push	ds;
-    push	si;
-    mov		ax, seg xms_entrypoint;
-    mov		es, ax;
-    push	ss;
-    pop		ds;
-#if 0
-    mov		si, bp;
-    add		si, offset xms;
-#else
-    lea		si, xms;
-#endif
-    mov 	ah, 0Bh;
-    call	dword ptr [xms_entrypoint];
-    pop		si;
-    pop		ds;
-    pop		es;
-    cmp		ax, 0000h;
-    je		nogood;
-    mov result, TRUE;
-    jmp done;
-  nogood:
-    mov result, FALSE;
-  done:
-  }
-
-  return result;
+  return xms_copy(&xms);
 }
 
 /* ------ File system functions ------------------------ */
@@ -746,8 +744,8 @@ void failprog(char *msg)
 }
 
 /* Check that the page of FAT entries for the supplied sector is in
-	the buffer. If it isn't, go get it, but write back the currently
-	buffered page first if it has been updated. */
+        the buffer. If it isn't, go get it, but write back the currently
+        buffered page first if it has been updated. */
 int check_FAT_page(uint abs_sector)
 {
   int page = (int) (abs_sector / FATPAGE_SIZE);
@@ -756,12 +754,12 @@ int check_FAT_page(uint abs_sector)
     if (FAT_page_dirty &&
         (!xms_copy_fm_real(xms_handle,
                            FAT_location + (cur_FAT_page * (FATPAGE_SIZE * 2)),
-                           FATPAGE_SIZE * 2, (uchar far *) & FAT_page)))
+                           FATPAGE_SIZE * 2, (uchar far *) FAT_page)))
       return FALSE;
 
     if (!xms_copy_to_real(xms_handle,
                           FAT_location + (page * (FATPAGE_SIZE * 2)), FATPAGE_SIZE * 2,
-                          (uchar far *) & FAT_page))
+                          (uchar far *) FAT_page))
       return FALSE;
     cur_FAT_page = page;
     FAT_page_dirty = FALSE;
@@ -770,7 +768,7 @@ int check_FAT_page(uint abs_sector)
 }
 
 /* Use the FAT to find the next sector in the chain for the current
-	file/directory */
+        file/directory */
 uint next_FAT_sector(uint abs_sector)
 {
   if (!check_FAT_page(abs_sector))
@@ -780,7 +778,7 @@ uint next_FAT_sector(uint abs_sector)
 }
 
 /* Update the FAT entry for this sector to reflect the next sector
-	in the chain for the current file/directory */
+        in the chain for the current file/directory */
 uint set_next_sector(uint abs_sector, uint next_sector)
 {
   uint save_sector;
@@ -801,8 +799,8 @@ uint set_next_sector(uint abs_sector, uint next_sector)
 }
 
 /* Find a free sector on the disk. Use the same algorithm as
-	DOS, which is to continue looking from where the last free
-	sector was found and allocated. */
+        DOS, which is to continue looking from where the last free
+        sector was found and allocated. */
 uint next_free_sector(void)
 {
   static uint prev_sector = 0;
@@ -836,7 +834,7 @@ void set_up_xms_disk(void)
 {
   ulong count, ofs;
   uint len;
-  
+
 
   if (!xms_is_present())
     failprog("XMS not present.");
@@ -871,23 +869,23 @@ void set_up_xms_disk(void)
 
   while (count > 0) {
     len = (uint) min(count, SECTOR_SIZE);
-    if (!xms_copy_fm_real(xms_handle, ofs, len, (uchar far *) & sector_buffer))
+    if (!xms_copy_fm_real(xms_handle, ofs, len, (uchar far *) sector_buffer))
       failprog("XMS error.");
     count -= len;
     ofs += len;
     sector_buffer[0] = sector_buffer[1] = 0;
   }
 
-  memset(((DIRREC *) & sector_buffer)->file_name, ' ', 11);
-  memcpy(((DIRREC *) & sector_buffer)->file_name, "PHANTOM", 7);
-  ((DIRREC *) & sector_buffer)->file_attr = 0x08;
-  ((DIRREC *) & sector_buffer)->file_time = dos_ftime();
-  if (!xms_copy_fm_real(xms_handle, 0, SECTOR_SIZE, (uchar far *) & sector_buffer))
+  memset(((DIRREC *) sector_buffer)->file_name, ' ', 11);
+  memcpy(((DIRREC *) sector_buffer)->file_name, "PHANTOM", 7);
+  ((DIRREC *) sector_buffer)->file_attr = 0x08;
+  ((DIRREC *) sector_buffer)->file_time = dos_ftime();
+  if (!xms_copy_fm_real(xms_handle, 0, SECTOR_SIZE, (uchar far *) sector_buffer))
     failprog("XMS error.");
 }
 
 /* Split the last level of the path in the filname field of the
-	SDA into the FCB-style filename area, also in the SDA */
+        SDA into the FCB-style filename area, also in the SDA */
 
 void get_fcbname_from_path(char far *path, char far *fcbname)
 {
@@ -902,9 +900,9 @@ void get_fcbname_from_path(char far *path, char far *fcbname)
 }
 
 /* See whether the filename matches the mask, one character
-	position at a time. A wildcard ? in tha mask matches any
-	character in the filename, any other character in the mask,
-	including spaces, must match exactly */
+        position at a time. A wildcard ? in tha mask matches any
+        character in the filename, any other character in the mask,
+        including spaces, must match exactly */
 
 int match_to_mask(char far *mask, char far *filename)
 {
@@ -918,13 +916,13 @@ int match_to_mask(char far *mask, char far *filename)
 }
 
 /* Find the sector number of the start of the directory entries
-	for the supplied path */
+        for the supplied path */
 
 int get_dir_start_sector(char far *path, uint far *abs_sector_ptr)
 {
   char fcbname[11];
   uint abs_sector = 0;
-  DIRREC *dr = (DIRREC *) & sector_buffer;
+  DIRREC *dr = (DIRREC *) sector_buffer;
   char far *next_dir;
   char far *path_end = path + _fstrlen(path);
   int i;
@@ -971,7 +969,7 @@ int find_next_entry(char far *mask, uchar attr_mask, char far *filename,
                     uint far *start_sec_ptr, long far *file_size_ptr,
                     uint far *dir_sector_ptr, uint far *dir_entryno_ptr)
 {
-  DIRREC *dr = (DIRREC *) &sector_buffer;
+  DIRREC *dr = (DIRREC *) sector_buffer;
   int i = *dir_entryno_ptr + 1;
   uint abs_sector = *dir_sector_ptr;
 
@@ -1023,7 +1021,7 @@ int create_dir_entry(uint far *dir_sector_ptr, uchar far *dir_entryno_ptr,
                      ulong file_time)
 {
   uint next_sector, dir_sector = *dir_sector_ptr;
-  DIRREC *dr = (DIRREC *) & sector_buffer;
+  DIRREC *dr = (DIRREC *) sector_buffer;
   int i;
 
   for (;;) {
@@ -1043,7 +1041,7 @@ int create_dir_entry(uint far *dir_sector_ptr, uchar far *dir_entryno_ptr,
       *dir_sector_ptr = dir_sector;
       if (dir_entryno_ptr)
         *dir_entryno_ptr = (uchar) i;
-      return put_sector(dir_sector, &sector_buffer);
+      return put_sector(dir_sector, sector_buffer);
     }
     if ((next_sector = next_FAT_sector(dir_sector)) == 0xFFFF) {
       if (!(next_sector = next_free_sector()))
@@ -1090,16 +1088,18 @@ void read_data(long far *file_pos_ptr, uint *len_ptr, uchar far *buf,
     i = (int) (*file_pos_ptr % SECTOR_SIZE);
     count = min((uint) SECTOR_SIZE - i, len);
     if (count < SECTOR_SIZE) {
-      if (!get_sector(abs_sector, &sector_buffer)) {
+      if (!get_sector(abs_sector, sector_buffer)) {
         *len_ptr -= len;
         goto update_sectors;
       }
       last_sector = abs_sector;
-      _fmemcpy(buf, (uchar far *) & sector_buffer[i], count);
+      _fmemcpy(buf, (uchar far *) &sector_buffer[i], count);
     }
-    else if (!get_sector(abs_sector, buf)) {
-      *len_ptr -= len;
-      goto update_sectors;
+    else {
+      if (!get_sector(abs_sector, buf)) {
+        *len_ptr -= len;
+        goto update_sectors;
+      }
     }
     len -= count;
     *file_pos_ptr += count;
@@ -1112,7 +1112,7 @@ update_sectors:
 }
 
 /* Adjust the file size, freeing up space, or allocating more
-	space, if necessary */
+        space, if necessary */
 
 void chop_file(long file_pos, uint far *start_sec_ptr, uint far *last_rel_ptr,
                uint far *last_abs_ptr)
@@ -1148,7 +1148,7 @@ void chop_file(long file_pos, uint far *start_sec_ptr, uint far *last_rel_ptr,
 }
 
 /* Copy data from the user buffer into the appropriate location
-	in XMS */
+        in XMS */
 
 void write_data(long far *file_pos_ptr, uint *len_ptr, uchar far *buf,
                 uint far *start_sec_ptr, uint far *last_rel_ptr, uint far *last_abs_ptr)
@@ -1192,11 +1192,11 @@ void write_data(long far *file_pos_ptr, uint *len_ptr, uchar far *buf,
     i = (uint) (*file_pos_ptr % SECTOR_SIZE);
     count = min((uint) SECTOR_SIZE - i, len);
     if (count < SECTOR_SIZE) {
-      if (!get_sector(abs_sector, &sector_buffer))
+      if (!get_sector(abs_sector, sector_buffer))
         goto update_sectors;
       last_sector = abs_sector;
-      _fmemcpy((uchar far *) & sector_buffer[i], buf, count);
-      if (!put_sector(abs_sector, &sector_buffer))
+      _fmemcpy((uchar far *) &sector_buffer[i], buf, count);
+      if (!put_sector(abs_sector, sector_buffer))
         goto update_sectors;
     }
     else if (!put_sector(abs_sector, buf))
@@ -1231,7 +1231,7 @@ void succeed(void)
 }
 
 /* Deal with differences in DOS version once, and set up a set
-	of absolute pointers */
+        of absolute pointers */
 
 void set_up_pointers(void)
 {
@@ -1286,8 +1286,8 @@ int contains_wildcards(char far *path)
 }
 
 /* Get DOS version, address of Swappable DOS Area, and address of
-	DOS List of lists. We only run on versions of DOS >= 3.10, so
-	fail otherwise */
+        DOS List of lists. We only run on versions of DOS >= 3.10, so
+        fail otherwise */
 
 void get_dos_vars(void)
 {
@@ -1391,7 +1391,7 @@ void is_ok_to_load(void)
 }
 
 /* This is where we do the initializations of the DOS structures
-	that we need in order to fit the mould */
+        that we need in order to fit the mould */
 
 void set_up_cds(void)
 {
@@ -1557,13 +1557,13 @@ void rd(void)
     return;
   }
 
-  if (!get_sector(last_sector = srchrec_ptr->dir_sector, &sector_buffer)) {
+  if (!get_sector(last_sector = srchrec_ptr->dir_sector, sector_buffer)) {
     fail(5);
     return;
   }
-  ((DIRREC_PTR) & sector_buffer)[srchrec_ptr->dir_entry_no].file_name[0] = (char) 0xE5;
-  if (  /* dirsector_has_entries(last_sector, &sector_buffer) && */
-       (!put_sector(last_sector, &sector_buffer))) {
+  ((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_name[0] = (char) 0xE5;
+  if (  /* dirsector_has_entries(last_sector, sector_buffer) && */
+       (!put_sector(last_sector, sector_buffer))) {
     fail(5);
     return;
   }
@@ -1613,7 +1613,7 @@ void md(void)
   }
   set_next_sector(dirrec_ptr->start_sector, 0xFFFF);
   last_sector = dirrec_ptr->start_sector;
-  if ((!put_sector(dirrec_ptr->start_sector, &sector_buffer)) ||
+  if ((!put_sector(dirrec_ptr->start_sector, sector_buffer)) ||
       (!create_dir_entry(&srchrec_ptr->dir_sector, NULL, fcbname_ptr, 0x10,
                          dirrec_ptr->start_sector, 0, dos_ftime()))) {
     fail(5);
@@ -1660,14 +1660,14 @@ void clsfil(void)
       fail(5);
   }
   else {
-    if ((last_sector != p->dir_sector) && (!get_sector(p->dir_sector, &sector_buffer)))
+    if ((last_sector != p->dir_sector) && (!get_sector(p->dir_sector, sector_buffer)))
       fail(5);
     last_sector = p->dir_sector;
-    ((DIRREC_PTR) & sector_buffer)[p->dir_entry_no].file_attr = p->file_attr;
-    ((DIRREC_PTR) & sector_buffer)[p->dir_entry_no].start_sector = p->start_sector;
-    ((DIRREC_PTR) & sector_buffer)[p->dir_entry_no].file_size = p->file_size;
-    ((DIRREC_PTR) & sector_buffer)[p->dir_entry_no].file_time = p->file_time;
-    if (!put_sector(p->dir_sector, &sector_buffer))
+    ((DIRREC_PTR) sector_buffer)[p->dir_entry_no].file_attr = p->file_attr;
+    ((DIRREC_PTR) sector_buffer)[p->dir_entry_no].start_sector = p->start_sector;
+    ((DIRREC_PTR) sector_buffer)[p->dir_entry_no].file_size = p->file_size;
+    ((DIRREC_PTR) sector_buffer)[p->dir_entry_no].file_time = p->file_time;
+    if (!put_sector(p->dir_sector, sector_buffer))
       fail(5);
   }
 }
@@ -1731,9 +1731,9 @@ void writfil(void)
 /* Lock file - subfunction 0Ah */
 
 /* We support this function only to illustrate how it works. We do
-	not actually honor LOCK/UNLOCK requests. The following function
-	supports locking only before, and both locking/unlocking after
-	DOS 4.0 */
+        not actually honor LOCK/UNLOCK requests. The following function
+        supports locking only before, and both locking/unlocking after
+        DOS 4.0 */
 void lockfil(void)
 {
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
@@ -1768,7 +1768,7 @@ void lockfil(void)
 /* UnLock file - subfunction 0Bh */
 
 /* We support this function only to illustrate how it works. The following
-	function supports only unlocking before DOS 4.0 */
+        function supports only unlocking before DOS 4.0 */
 void unlockfil(void)
 {
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
@@ -1823,7 +1823,7 @@ void setfatt()
   }
 
   ((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_attr = (uchar) * stack_param_ptr;
-  if (!put_sector(last_sector, &sector_buffer)) {
+  if (!put_sector(last_sector, sector_buffer)) {
     fail(5);
     return;
   }
@@ -1886,12 +1886,12 @@ void renfil(void)
                             dirrec_ptr->file_size, dirrec_ptr->file_time))
         ret = 5;
       else {
-        if (!get_sector(last_sector = srchrec_ptr->dir_sector, &sector_buffer)) {
+        if (!get_sector(last_sector = srchrec_ptr->dir_sector, sector_buffer)) {
           fail(5);
           return;
         }
-        ((DIRREC_PTR) & sector_buffer)[srchrec_ptr->dir_entry_no].file_name[0] = (char) 0xE5;
-        if (!put_sector(srchrec_ptr->dir_sector, &sector_buffer)) {
+        ((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_name[0] = (char) 0xE5;
+        if (!put_sector(srchrec_ptr->dir_sector, sector_buffer)) {
           fail(5);
           return;
         }
@@ -1922,9 +1922,9 @@ void delfil(void)
       ret = 5;
     else {
       FREE_SECTOR_CHAIN(dirrec_ptr->start_sector);
-      ((DIRREC_PTR) & sector_buffer)[srchrec_ptr->dir_entry_no].file_name[0] = (char) 0xE5;
-      if (      /* dirsector_has_entries(last_sector, &sector_buffer) && */
-           (!put_sector(last_sector, &sector_buffer))) {
+      ((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_name[0] = (char) 0xE5;
+      if (      /* dirsector_has_entries(last_sector, sector_buffer) && */
+           (!put_sector(last_sector, sector_buffer))) {
         fail(5);
         return;
       }
@@ -2073,9 +2073,9 @@ void unknown_fxn_2D()
 
 /* Special Multi-Purpose Open File - subfunction 2Eh */
 
-#define CREATE_IF_NOT_EXIST		0x10
-#define OPEN_IF_EXISTS			0x01
-#define REPLACE_IF_EXISTS		0x02
+#define CREATE_IF_NOT_EXIST             0x10
+#define OPEN_IF_EXISTS                  0x01
+#define REPLACE_IF_EXISTS               0x02
 
 void special_opnfil(void)
 {
@@ -2127,51 +2127,51 @@ void unsupported(void)
 }
 
 PROC dispatch_table[] = {
-  inquiry,      /* 0x00h */
-  rd,   /* 0x01h */
-  unsupported,  /* 0x02h */
-  md,   /* 0x03h */
-  unsupported,  /* 0x04h */
-  cd,   /* 0x05h */
-  clsfil,       /* 0x06h */
-  cmmtfil,      /* 0x07h */
-  readfil,      /* 0x08h */
-  writfil,      /* 0x09h */
-  lockfil,      /* 0x0Ah */
-  unlockfil,    /* 0x0Bh */
-  dskspc,       /* 0x0Ch */
-  unsupported,  /* 0x0Dh */
-  setfatt,      /* 0x0Eh */
-  getfatt,      /* 0x0Fh */
-  unsupported,  /* 0x10h */
-  renfil,       /* 0x11h */
-  unsupported,  /* 0x12h */
-  delfil,       /* 0x13h */
-  unsupported,  /* 0x14h */
-  unsupported,  /* 0x15h */
-  opnfil,       /* 0x16h */
-  creatfil,     /* 0x17h */
-  unsupported,  /* 0x18h */
-  unsupported,  /* 0x19h */
-  unsupported,  /* 0x1Ah */
-  ffirst,       /* 0x1Bh */
-  fnext,        /* 0x1Ch */
-  unsupported,  /* 0x1Dh */
-  unsupported,  /* 0x1Eh */
-  unsupported,  /* 0x1Fh */
-  unsupported,  /* 0x20h */
-  skfmend,      /* 0x21h */
-  unsupported,  /* 0x22h */
-  unsupported,  /* 0x23h */
-  unsupported,  /* 0x24h */
-  unsupported,  /* 0x25h */
-  unsupported,  /* 0x26h */
-  unsupported,  /* 0x27h */
-  unsupported,  /* 0x28h */
-  unsupported,  /* 0x29h */
-  unsupported,  /* 0x2Ah */
-  unsupported,  /* 0x2Bh */
-  unsupported,  /* 0x2Ch */
+  inquiry,              /* 0x00h */
+  rd,                   /* 0x01h */
+  unsupported,          /* 0x02h */
+  md,                   /* 0x03h */
+  unsupported,          /* 0x04h */
+  cd,                   /* 0x05h */
+  clsfil,               /* 0x06h */
+  cmmtfil,              /* 0x07h */
+  readfil,              /* 0x08h */
+  writfil,              /* 0x09h */
+  lockfil,              /* 0x0Ah */
+  unlockfil,            /* 0x0Bh */
+  dskspc,               /* 0x0Ch */
+  unsupported,          /* 0x0Dh */
+  setfatt,              /* 0x0Eh */
+  getfatt,              /* 0x0Fh */
+  unsupported,          /* 0x10h */
+  renfil,               /* 0x11h */
+  unsupported,          /* 0x12h */
+  delfil,               /* 0x13h */
+  unsupported,          /* 0x14h */
+  unsupported,          /* 0x15h */
+  opnfil,               /* 0x16h */
+  creatfil,             /* 0x17h */
+  unsupported,          /* 0x18h */
+  unsupported,          /* 0x19h */
+  unsupported,          /* 0x1Ah */
+  ffirst,               /* 0x1Bh */
+  fnext,                /* 0x1Ch */
+  unsupported,          /* 0x1Dh */
+  unsupported,          /* 0x1Eh */
+  unsupported,          /* 0x1Fh */
+  unsupported,          /* 0x20h */
+  skfmend,              /* 0x21h */
+  unsupported,          /* 0x22h */
+  unsupported,          /* 0x23h */
+  unsupported,          /* 0x24h */
+  unsupported,          /* 0x25h */
+  unsupported,          /* 0x26h */
+  unsupported,          /* 0x27h */
+  unsupported,          /* 0x28h */
+  unsupported,          /* 0x29h */
+  unsupported,          /* 0x2Ah */
+  unsupported,          /* 0x2Bh */
+  unsupported,          /* 0x2Ch */
   unknown_fxn_2D,       /* 0x2Dh */
   special_opnfil        /* 0x0Eh */
 };
@@ -2210,7 +2210,7 @@ void interrupt far redirector(ALL_REGS entry_regs)
 
   {
     uint my_sp = FP_OFF(our_stack) + STACK_SIZE - 2;
-    
+
     _asm {
       mov dos_sp, sp;
       mov ax, ds;
@@ -2234,7 +2234,7 @@ void interrupt far redirector(ALL_REGS entry_regs)
     fail(5);
   else
     dispatch_table[curr_fxn]();
-  
+
   // Switch the stack back
   _asm {
     cli;
@@ -2256,8 +2256,8 @@ void interrupt far redirector(ALL_REGS entry_regs)
 /* ---- Unload functionality --------------*/
 
 /* Find the latest Phantom installed, unplug it from the Int 2F
-	chain if possible, make the CDS reflect an invalid drive, and
-	free its real and XMS memory. */
+        chain if possible, make the CDS reflect an invalid drive, and
+        free its real and XMS memory. */
 
 static uint ul_save_ss, ul_save_sp;
 static int ul_i;
@@ -2391,8 +2391,8 @@ void unload_latest()
 /* ------- TSR termination routines -------- */
 
 /* Plug into Int 2Fh, and calculate the size of the TSR to
-	keep in memory. Plug into a 'user' interrupt to allow for
-	unloading */
+        keep in memory. Plug into a 'user' interrupt to allow for
+        unloading */
 
 void prepare_for_tsr(void)
 {
