@@ -11,11 +11,11 @@
  UndocDOS also contains a full specification for the redirector
  interface.
 
- 07/25/93 - Drive number should be one less. AES found using
-            FILES/USEFCB. Porbably same as Markun/LanMan
-            problem. Search for ref: DR_TOO_HIGH
+ 1993-Jul-25 - Drive number should be one less. AES found using
+               FILES/USEFCB. Porbably same as Markun/LanMan
+               problem. Search for ref: DR_TOO_HIGH
 
- Requires Microsoft C.  (Sorry, Borland users.)
+ 2025-Feb-26 - Converted to compile with Open Watcom - FozzTexx
 
 *******************************************************/
 
@@ -318,8 +318,6 @@ DIRREC_PTR dirrec_ptr_2;        /* ptr to 1st found dir entry area in SDA */
 
 /* Other global data items */
 FARPROC xms_entrypoint = NULL;  /* obtained from Int 2fh/4310h */
-#pragma aux xms_entrypoint \
-  parm [ax]
 ALL_REGS r;                     /* Global save area for all caller's regs */
 uchar our_drive_no;             /* A: is 1, B: is 2, etc. */
 char our_drive_str[3] = " :";   /* Our drive letter string */
@@ -636,51 +634,14 @@ int xms_free_block(uint handle)
   return success;
 }
 
-extern __segment getDS(void);
-#pragma aux getDS = \
-    "mov ax, ds";
-
 int xms_copy(XMSCOPY *xms)
 {
   int result;
-  uint my_ds = FP_SEG(xms), my_si = FP_OFF(xms);
 
-#if 0
-  _asm {
-    push        es;
-    push        ds;
-    push        si;
-    mov         ax, seg xms_entrypoint;
-    mov         es, ax;
-    push        ss;
-    pop         ds;
-#if 0
-    mov         si, bp;
-    add         si, offset xms;
-#else
-    mov si, my_si;
-#endif
-    mov         ah, 0Bh;
-    call        dword ptr [xms_entrypoint];
-    pop         si;
-    pop         ds;
-    pop         es;
-    cmp         ax, 0000h;
-    je          nogood;
-    mov result, TRUE;
-    jmp done;
-  nogood:
-    mov result, FALSE;
-  done:
-  }
-
-  return result;
-#else
   _asm {
     push ds;
     push si;
-    mov ds, my_ds;
-    mov si, my_si;
+    mov si, xms;
     mov ah, 0x0b;
     call dword ptr [xms_entrypoint];
     pop si;
@@ -689,7 +650,6 @@ int xms_copy(XMSCOPY *xms)
   }
 
   return result == 1;
-#endif
 }
 
 /* Copy from XMS into real memory */
@@ -2209,18 +2169,12 @@ void interrupt far redirector(ALL_REGS entry_regs)
   stack_param_ptr = (uint far *) MK_FP(dos_ss, save_bp + sizeof(ALL_REGS));
 
   {
-    uint my_sp = FP_OFF(our_stack) + STACK_SIZE - 2;
-
     _asm {
       mov dos_sp, sp;
       mov ax, ds;
       cli;
       mov ss, ax;   // New stack segment is in Data segment.
-#if 0
       mov sp, offset our_stack + STACK_SIZE - 2;
-#else
-      mov sp, my_sp;
-#endif
       sti;
     }
   }
