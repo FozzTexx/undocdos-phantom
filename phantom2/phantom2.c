@@ -28,6 +28,11 @@
 #include <bios.h>
 #include <time.h>
 
+#undef DEBUG
+#ifdef DEBUG
+#include "../../fujinet-rs232/sys/print.h"
+#endif
+
 /* ****************************************************
    Basic typedefs
    **************************************************** */
@@ -44,7 +49,11 @@ typedef unsigned long ulong;
 #define         FALSE                           0
 
 #define         STACK_SIZE                      1024
+#ifdef __WATCOMC__
+#define		FCARRY				INTR_CF
+#else
 #define         FCARRY                          0x0001
+#endif
 #define         SECTOR_SIZE                     1024    // 1024b/sector allows for 64M of XMS
 #define         FATPAGE_SIZE            128
 #define         ROOTDIR_ENTRIES         128
@@ -451,17 +460,26 @@ char *my_hex(ulong num, int len)
   return buf;
 }
 
+extern __segment getSP(void);
+#pragma aux getSP = \
+    "mov ax, sp";
+extern __segment getSS(void);
+#pragma aux getSS = \
+    "mov ax, ss";
+extern __segment getDS(void);
+#pragma aux getDS = \
+    "mov ax, ds";
+
 /* ------------------- Internal DOS calls ------------ */
 
 uint r_es, r_di, r_ds;
+uint result_lo, result_hi;
+
 ulong dos_ftime(void)
 {
-
-  int result_lo, result_hi;
-
-
   r_es = r.es, r_di = r.di, r_ds = r.ds;
 
+#if 0
   _asm {
     mov save_sp, sp;    /* Save current stack pointer. */
     cli;
@@ -488,12 +506,16 @@ ulong dos_ftime(void)
     mov result_lo, ax;
     mov result_hi, dx;
   }
+#else
+#warning getting the time does not work
+#endif
 
   return (ulong) MK_FP(result_hi, result_lo);
 }
 
 void set_sft_owner(SFTREC_PTR sft)
 {
+#if 0
   r_ds = r.ds;
 
   _asm {
@@ -518,6 +540,9 @@ void set_sft_owner(SFTREC_PTR sft)
     pop di;
     pop es;
   }
+#else
+#warning seting owner does not work
+#endif
 }
 
 // Does fcbname_ptr point to a device name?
@@ -634,63 +659,48 @@ int xms_free_block(uint handle)
   return success;
 }
 
-int xms_copy(XMSCOPY *xms)
+XMSCOPY xms;
+int xms_copy(uint source, ulong source_offset, uint dest, ulong dest_offset, ulong length)
 {
-  int result;
+  uint result;
+  uchar err;
+  void *xms_ptr = &xms;
+
+
+  xms.copy_len = length;
+  xms.srce_hndle = source;
+  xms.srce_ofs = source_offset;
+  xms.dest_hndle = dest;
+  xms.dest_ofs = dest_offset;
 
   _asm {
     push ds;
     push si;
-    mov si, xms;
+    mov si, xms_ptr;
     mov ah, 0x0b;
     call dword ptr [xms_entrypoint];
     pop si;
     pop ds;
     mov result, ax;
+    mov err, bl;
   }
 
+#if 0
+#ifdef DEBUG
+  if (!result) {
+    consolef("XMS COPY ERR 0x%02x\n", err);
+    //dumpHex(&xms, sizeof(xms), 0);
+  }
+  else
+    consolef("XMS COPY success\n");
+#endif
+#endif
+  
   return result == 1;
 }
 
-/* Copy from XMS into real memory */
-int xms_copy_to_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
-{
-  XMSCOPY xms;
-  int result;
-
-  if (len == 0)
-    return TRUE;
-
-  if (len & 1)
-    return FALSE;
-
-  xms.copy_len = (ulong) len;
-  xms.srce_hndle = handle;
-  xms.srce_ofs = ofs_in_handle;
-  xms.dest_hndle = 0;
-  xms.dest_ofs = (ulong) buf;
-
-  return xms_copy(&xms);
-}
-
-int xms_copy_fm_real(uint handle, ulong ofs_in_handle, uint len, uchar far *buf)
-{
-  XMSCOPY xms;
-
-  if (len == 0)
-    return TRUE;
-
-  if (len & 1)
-    return FALSE;
-
-  xms.copy_len = (ulong) len;
-  xms.srce_hndle = 0;
-  xms.srce_ofs = (ulong) buf;
-  xms.dest_hndle = handle;
-  xms.dest_ofs = ofs_in_handle;
-
-  return xms_copy(&xms);
-}
+#define xms_copy_to_real(xms_h, offset, len, buf) xms_copy(xms_h, offset, 0, (ulong) buf, len)
+#define xms_copy_fm_real(xms_h, offset, len, buf) xms_copy(0, (ulong) buf, xms_h, offset, len)
 
 /* ------ File system functions ------------------------ */
 
@@ -2133,7 +2143,7 @@ PROC dispatch_table[] = {
   unsupported,          /* 0x2Bh */
   unsupported,          /* 0x2Ch */
   unknown_fxn_2D,       /* 0x2Dh */
-  special_opnfil        /* 0x0Eh */
+  special_opnfil        /* 0x2Eh */
 };
 
 /* -------------------------------------------------------------*/
@@ -2145,6 +2155,7 @@ PROC dispatch_table[] = {
 void interrupt far redirector(ALL_REGS entry_regs)
 {
   static uint save_bp;
+  uint our_ss, our_sp, cur_ss, cur_sp;
 
   _asm STI;
 
@@ -2168,54 +2179,73 @@ void interrupt far redirector(ALL_REGS entry_regs)
 
   stack_param_ptr = (uint far *) MK_FP(dos_ss, save_bp + sizeof(ALL_REGS));
 
-  {
-    _asm {
-      mov dos_sp, sp;
+  cur_ss = getSS();
+  cur_sp = getSP();
+  our_sp = (FP_OFF(our_stack) + 15) >> 4;
+  our_ss = FP_SEG(our_stack) + our_sp;
+  our_sp = STACK_SIZE - 2 - (((our_sp - (FP_OFF(our_stack) >> 4)) << 4)
+			     - (FP_OFF(our_stack) & 0xf));
+#if 0
+#ifdef DEBUG
+  consolef("STACK 0x%08lx SS:SP=%04x:%04x OUR=%04x:%04x FP=%04x:%04x DS=%04x\n",
+	   (void far *) our_stack, cur_ss, cur_sp,
+	   our_ss, our_sp, FP_SEG(our_stack), FP_OFF(our_stack), getDS());
+#endif
+#endif
+    
+  _asm {
+    mov dos_sp, sp;
 
-      // align stack so it starts at an offset of 0
-      mov ax, offset our_stack; // Load unaligned offset into AX
-      mov dx, ax;
-      add ax, 15;               // Round up the offset to the next paragraph boundary
-      mov cl, 4;
-      shr ax, cl;                // Divide the offset by 16
-      mov cx, ds;
-      add ax, cx;               // Add the segment shift to the original segment (DS)
-      add dx, cx;               // Get unaligned stack segment
-
-      // calculate end of stack accounting for alignment
-      mov cx, STACK_SIZE - 2;   // Precompute SIZE - 2 at assembly time
-      mov bx, ax;               // Copy aligned segment (AX) into BX to preserve it
-      sub bx, dx;               // Compute AX - DX (paragraphs shifted)
-      shl bx, cl;               // Convert to byte loss (paragraphs * 16)
-      sub cx, bx;               // Remove the lost bytes from the size
-
-      // activate new stack
-      cli;
-      mov ss, ax;
-      mov sp, cx;
-      sti;
-    }
+    mov ax, our_ss;
+    mov cx, our_sp;
+      
+    // activate new stack
+    cli;
+    mov ss, ax;
+    mov sp, cx;
+    sti;
   }
+
+  cur_ss = getSS();
+  cur_sp = getSP();
+#if 0
+#ifdef DEBUG
+  consolef("SS:SP=%04x:%04x DOS=%04x:%04x\n", cur_ss, cur_sp, dos_ss, dos_sp);
+#endif
+#endif
 
   // Expect success!
   succeed();
 
+#ifdef DEBUG
+  consolef("DISPATCH IN 0x%02x\n", curr_fxn);
+#endif
   // Call the appropriate handling function unless we already know we
   // need to fail
   if (filename_is_char_device)
     fail(5);
   else
     dispatch_table[curr_fxn]();
+#ifdef DEBUG
+  consolef("DISPATCH OUT err: %i result: 0x%04x\n", r.flags & FCARRY, r.ax);
+#endif
 
   // Switch the stack back
   _asm {
     cli;
     mov ss, dos_ss;
     mov sp, dos_sp;
-
     sti;
   }
 
+  cur_ss = getSS();
+  cur_sp = getSP();
+#if 0
+#ifdef DEBUG
+  consolef("restored SS:SP=%04x:%04x DOS=%04x:%04x\n", cur_ss, cur_sp, dos_ss, dos_sp);
+#endif
+#endif
+  
   // put the possibly changed registers back on the stack, and return
   entry_regs = r;
   return;

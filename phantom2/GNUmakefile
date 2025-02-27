@@ -6,8 +6,8 @@ WMAKE=wmake -h
 #xms.exe: xms.c
 #	wcl -q -bt=DOS $< ../../fujinet-rs232/sys/print.obj
 
-#xms2.exe: xms2.c
-#	wcl -q -bt=DOS $<
+# xms2.exe: xms2.c
+# 	wcl -q -bt=DOS $<
 
 #unload.o: unload.c
 #	wcc -bt=DOS $<
