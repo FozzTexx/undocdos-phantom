@@ -12,6 +12,9 @@ WMAKE=wmake -h
 #unload.o: unload.c
 #	wcc -bt=DOS $<
 
+# stack.obj: stack.asm
+# 	wasm -bt=DOS $<
+
 all:
 	@$(WMAKE) -e CPPFLAGS=-DVERSION='\"$(shell git rev-parse --short HEAD)$(shell git status --porcelain | grep -q '^[ MADRCU]' && echo '*')\"'
 

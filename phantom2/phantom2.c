@@ -2171,10 +2171,28 @@ void interrupt far redirector(ALL_REGS entry_regs)
   {
     _asm {
       mov dos_sp, sp;
-      mov ax, ds;
+
+      // align stack so it starts at an offset of 0
+      mov ax, offset our_stack; // Load unaligned offset into AX
+      mov dx, ax;
+      add ax, 15;               // Round up the offset to the next paragraph boundary
+      mov cl, 4;
+      shr ax, cl;                // Divide the offset by 16
+      mov cx, ds;
+      add ax, cx;               // Add the segment shift to the original segment (DS)
+      add dx, cx;               // Get unaligned stack segment
+
+      // calculate end of stack accounting for alignment
+      mov cx, STACK_SIZE - 2;   // Precompute SIZE - 2 at assembly time
+      mov bx, ax;               // Copy aligned segment (AX) into BX to preserve it
+      sub bx, dx;               // Compute AX - DX (paragraphs shifted)
+      shl bx, cl;               // Convert to byte loss (paragraphs * 16)
+      sub cx, bx;               // Remove the lost bytes from the size
+
+      // activate new stack
       cli;
-      mov ss, ax;   // New stack segment is in Data segment.
-      mov sp, offset our_stack + STACK_SIZE - 2;
+      mov ss, ax;
+      mov sp, cx;
       sti;
     }
   }
