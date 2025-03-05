@@ -28,7 +28,7 @@
 #include <bios.h>
 #include <time.h>
 
-#undef DEBUG
+#define DEBUG
 #ifdef DEBUG
 #include "../../fujinet-rs232/sys/print.h"
 #endif
@@ -1670,6 +1670,10 @@ void readfil(void)
   /* Fill caller's buffer and update the SFT for the file */
   read_data(&p->file_pos, &r.cx, ((V3_SDA_PTR) sda_ptr)->current_dta,
             p->start_sector, &p->rel_sector, &p->abs_sector);
+  consolef("SFT:\n");
+  dumpHex(p, sizeof(*p), 0);
+  consolef("REGS:\n");
+  dumpHex(&r, sizeof(r), 0);
 }
 
 /* Write to File - subfunction 09h */
@@ -1786,13 +1790,13 @@ void setfatt()
   if (r.flags & FCARRY)
     return;
 
-  if ((((uchar) * stack_param_ptr) & 0x10) ||
+  if ((((uchar) *stack_param_ptr) & 0x10) ||
       (((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_attr & 0x10)) {
     fail(5);
     return;
   }
 
-  ((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_attr = (uchar) * stack_param_ptr;
+  ((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_attr = (uchar) *stack_param_ptr;
   if (!put_sector(last_sector, sector_buffer)) {
     fail(5);
     return;
@@ -1962,7 +1966,7 @@ void fill_sft(SFTREC_PTR p, int use_found_1, int truncate)
     p->dir_entry_no = (uchar) srchrec_ptr->dir_entry_no;
   }
   else {
-    p->file_attr = (uchar) * stack_param_ptr;   /* Attr is top of stack */
+    p->file_attr = (uchar) *stack_param_ptr;   /* Attr is top of stack */
     p->file_time = dos_ftime();
     p->start_sector = 0xffff;
     p->file_size = 0;
@@ -2440,6 +2444,7 @@ void tsr(void)
   _asm mov highest_seg, ds;
 
   tsr_paras = highest_seg + (((uint) &end) / 16) + 1 - _psp;
+  consolef("PARAS: %i\n", tsr_paras);
 
   // Plug ourselves into the Int 2Fh chain
   _dos_setvect(0x2f, redirector);
