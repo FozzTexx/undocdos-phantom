@@ -175,7 +175,7 @@ void is_ok_to_load(void)
 
   _asm {
     mov ax, 0x1100;
-    int 0x2f;
+    int DOS_INT_REDIR;
     mov result, ax;
   }
 
@@ -287,14 +287,14 @@ void unload_latest()
   if (ul_i == 0x5f)
     failprog("Phantom not loaded.");
 
-  p_vect = _dos_getvect(0x2f);
+  p_vect = _dos_getvect(DOS_INT_REDIR);
 
   // Check that a subsequent TSR hasn't taken over Int 2Fh
   if (sig_ptr->our_handler != (void far *) p_vect)
     failprog("Interrupt 2F has been superceded...");
 
   p_vect = (INTVECT) sig_ptr->prev_handler;
-  _dos_setvect(0x2f, p_vect);
+  _dos_setvect(DOS_INT_REDIR, p_vect);
   p_vect = _dos_getvect(ul_i);
   psp = ((SIGREC_PTR) p_vect)->psp;
   our_drive_no = ((SIGREC_PTR) p_vect)->drive_no;
@@ -383,7 +383,7 @@ void prepare_for_tsr(void)
       break;
   }
 
-  prev_int2f_vector = _dos_getvect(0x2f);
+  prev_int2f_vector = _dos_getvect(DOS_INT_REDIR);
   if (i == 0x67) {
     print_string("No user intrs available. Phantom not unloadable..", TRUE);
     return;
@@ -413,7 +413,7 @@ void tsr(void)
   tsr_paras = highest_seg + (((uint) &end) / 16) + 1 - _psp;
 
   // Plug ourselves into the Int 2Fh chain
-  _dos_setvect(0x2f, redirector);
+  _dos_setvect(DOS_INT_REDIR, redirector);
   _dos_keep(0, tsr_paras);
 }
 

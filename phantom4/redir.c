@@ -7,83 +7,6 @@
 
 #define STACK_SIZE 1024
 
-/* all the calls we need to support are in the range 0..2Eh */
-/* This serves as a list of the function types that we support */
-#define _inquiry        0x00
-#define _rd             0x01
-#define _md             0x03
-#define _cd             0x05
-#define _clsfil         0x06
-#define _cmmtfil        0x07
-#define _readfil        0x08
-#define _writfil        0x09
-#define _lockfil        0x0A
-#define _unlockfil      0x0B
-#define _dskspc         0x0C
-#define _setfatt        0x0E
-#define _getfatt        0x0F
-#define _renfil         0x11
-#define _delfil         0x13
-#define _opnfil         0x16
-#define _creatfil       0x17
-#define _ffirst         0x1B
-#define _fnext          0x1C
-#define _skfmend        0x21
-#define _unknown_fxn_2D 0x2D
-#define _spopnfil       0x2E
-#define _unsupported    0xFF
-
-// FIXME - this is essentially the same as dispatch_table
-uchar fxnmap[] = {
-  _inquiry,     /* 0x00h */
-  _rd,  /* 0x01h */
-  _unsupported, /* 0x02h */
-  _md,  /* 0x03h */
-  _unsupported, /* 0x04h */
-  _cd,  /* 0x05h */
-  _clsfil,      /* 0x06h */
-  _cmmtfil,     /* 0x07h */
-  _readfil,     /* 0x08h */
-  _writfil,     /* 0x09h */
-  _lockfil,     /* 0x0Ah */
-  _unlockfil,   /* 0x0Bh */
-  _dskspc,      /* 0x0Ch */
-  _unsupported, /* 0x0Dh */
-  _setfatt,     /* 0x0Eh */
-  _getfatt,     /* 0x0Fh */
-  _unsupported, /* 0x10h */
-  _renfil,      /* 0x11h */
-  _unsupported, /* 0x12h */
-  _delfil,      /* 0x13h */
-  _unsupported, /* 0x14h */
-  _unsupported, /* 0x15h */
-  _opnfil,      /* 0x16h */
-  _creatfil,    /* 0x17h */
-  _unsupported, /* 0x18h */
-  _unsupported, /* 0x19h */
-  _unsupported, /* 0x1Ah */
-  _ffirst,      /* 0x1Bh */
-  _fnext,       /* 0x1Ch */
-  _unsupported, /* 0x1Dh */
-  _unsupported, /* 0x1Eh */
-  _unsupported, /* 0x1Fh */
-  _unsupported, /* 0x20h */
-  _skfmend,     /* 0x21h */
-  _unsupported, /* 0x22h */
-  _unsupported, /* 0x23h */
-  _unsupported, /* 0x24h */
-  _unsupported, /* 0x25h */
-  _unsupported, /* 0x26h */
-  _unsupported, /* 0x27h */
-  _unsupported, /* 0x28h */
-  _unsupported, /* 0x29h */
-  _unsupported, /* 0x2Ah */
-  _unsupported, /* 0x2Bh */
-  _unsupported, /* 0x2Ch */
-  _unknown_fxn_2D,      /* 0x2Dh */
-  _spopnfil     /* 0x2Eh */
-};
-
 ALL_REGS r;                     /* Global save area for all caller's regs */
 uchar our_drive_no;             /* A: is 1, B: is 2, etc. */
 char our_drive_str[3] = " :";   /* Our drive letter string */
@@ -948,17 +871,17 @@ int is_call_for_us(uint es, uint di, uint ds)
   // of the device information word in the SFT. Values > last drive
   // relate to files not associated with drives, such as LAN Manager
   // named pipes (Thanks to Dave Markun).
-  if ((curr_fxn >= _clsfil && curr_fxn <= _unlockfil)
-      || (curr_fxn == _skfmend)
-      || (curr_fxn == _unknown_fxn_2D)) {
+  if ((curr_fxn >= SUBF_CLOSE && curr_fxn <= SUBF_UNLOCK)
+      || (curr_fxn == SUBF_SEEK)
+      || (curr_fxn == SUBF_EXTENDATTR)) {
     ret = ((((SFTREC_PTR) MK_FP(es, di))->dev_info_word & 0x3F)
            == our_drive_no);
   }
   else {
-    if (curr_fxn == _inquiry)   // 2F/1100 -- succeed automatically
+    if (curr_fxn == SUBF_INQUIRY)   // 2F/1100 -- succeed automatically
       ret = TRUE;
     else {
-      if (curr_fxn == _fnext)   // Find Next
+      if (curr_fxn == SUBF_FINDNEXT)   // Find Next
       {
         SRCHREC_PTR psrchrec;   // check search record in SDA
 
@@ -976,7 +899,7 @@ int is_call_for_us(uint es, uint di, uint ds)
 
       if (_fmemcmp(cds_path_root, p, cds_root_size) == 0) {
         // If a path is present, does it refer to a character device
-        if (curr_fxn != _dskspc)
+        if (curr_fxn != SUBF_GETDISKSPACE)
           generate_fcbname(ds);
         return TRUE;
       }
@@ -1003,9 +926,9 @@ void interrupt far redirector(ALL_REGS entry_regs)
   if (((entry_regs.ax >> 8) != (uchar) 0x11) || ((uchar) entry_regs.ax > MAX_FXN_NO))
     goto chain_on;
 
-  curr_fxn = fxnmap[(uchar) entry_regs.ax];
+  curr_fxn = (uchar) entry_regs.ax;
 
-  if ((curr_fxn == _unsupported) ||
+  if ((dispatch_table[curr_fxn] == unsupported) ||
       (!is_call_for_us(entry_regs.es, entry_regs.di, entry_regs.ds)))
     goto chain_on;
 
