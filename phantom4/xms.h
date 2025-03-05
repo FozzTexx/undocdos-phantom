@@ -1,7 +1,7 @@
 #ifndef _XMS_H
 #define _XMS_H
 
-#include "types.h"
+#include "dosdata.h"
 
 extern int xms_is_present(void);
 extern uint xms_kb_avail(void);

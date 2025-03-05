@@ -1,7 +1,7 @@
 #ifndef _REDIR_H
 #define _REDIR_H
 
-#include "types.h"
+#include "dosdata.h"
 
 #define DOS_INT_REDIR   0x2F
 #define REDIRECTOR_FUNC 0x11

@@ -1,7 +1,7 @@
 #ifndef _BIOS_H
 #define _BIOS_H
 
-#include "types.h"
+#include "dosdata.h"
 
 extern void print_char(char c);
 extern void print_string(char far *str, int add_newline);

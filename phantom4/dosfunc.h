@@ -1,7 +1,7 @@
 #ifndef _DOSFUNC_H
 #define _DOSFUNC_H
 
-#include "types.h"
+#include "dosdata.h"
 
 extern ulong dos_ftime(void);
 extern void set_sft_owner(SFTREC_PTR sft);

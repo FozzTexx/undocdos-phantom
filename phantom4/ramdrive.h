@@ -1,7 +1,7 @@
 #ifndef _RAMDRIVE_H
 #define _RAMDRIVE_H
 
-#include "types.h"
+#include "dosdata.h"
 #include "xms.h"
 
 #define         SECTOR_SIZE             1024    // 1024b/sector allows for 64M of XMS
