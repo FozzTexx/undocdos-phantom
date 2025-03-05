@@ -1,4 +1,5 @@
 #include "redir.h"
+#include "doserr.h"
 #include "ramdrive.h"
 #include "dosfunc.h"
 #include <stdlib.h>
@@ -98,7 +99,7 @@ void find_next(void)
                        &dirrec_ptr->file_attr, &dirrec_ptr->file_time,
                        &dirrec_ptr->start_sector, &dirrec_ptr->file_size,
                        &srchrec_ptr->dir_sector, &srchrec_ptr->dir_entry_no)) {
-    fail(18);
+    fail(DOSERR_NO_MORE_FILES);
     return;
   }
 }
@@ -139,7 +140,7 @@ void find_first(void)
   if (path)
     *path = '\\';
   if (!success) {
-    fail(3);
+    fail(DOSERR_PATH_NOT_FOUND);
     return;
   }
 
@@ -173,11 +174,11 @@ void rename_dir(void)
 {
   /* special case for root */
   if ((*filename_ptr == '\\') && (!*(filename_ptr + 1))) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
   if (contains_wildcards(fcbname_ptr)) {
-    fail(3);
+    fail(DOSERR_PATH_NOT_FOUND);
     return;
   }
   _fstrcpy(filename_ptr_2, filename_ptr);
@@ -190,7 +191,7 @@ void rename_dir(void)
   }
 
   if (!_fstrncmp(filename_ptr_2, current_path, _fstrlen(filename_ptr_2))) {
-    fail(16);
+    fail(DOSERR_CANNOT_REMOVE_CURRENT_DIR);
     return;
   }
 
@@ -198,23 +199,23 @@ void rename_dir(void)
   srchrec_ptr_2->attr_mask = 0x3f;
 
   if ((r.ax = ffirst2()) == 3) {
-    fail(3);
+    fail(DOSERR_PATH_NOT_FOUND);
     return;
   }
 
   if (!r.ax) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
 
   if (!get_sector(last_sector = srchrec_ptr->dir_sector, sector_buffer)) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
   ((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_name[0] = (char) 0xE5;
   if (  /* dirsector_has_entries(last_sector, sector_buffer) && */
        (!put_sector(last_sector, sector_buffer))) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
 
@@ -227,12 +228,12 @@ void make_dir(void)
 {
   /* special case for root */
   if ((*filename_ptr == '\\') && (!*(filename_ptr + 1))) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
   // can't create dir name with * or ? in it
   if (contains_wildcards(fcbname_ptr)) {
-    fail(3);
+    fail(DOSERR_PATH_NOT_FOUND);
     return;
   }
 
@@ -240,7 +241,7 @@ void make_dir(void)
   find_first();
   if (r.ax == 0)        // we need error 2 here
   {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
   if (r.ax != 2)
@@ -258,7 +259,7 @@ void make_dir(void)
   last_sector = 0xffff;
   memset(sector_buffer, 0, SECTOR_SIZE);
   if (!(dirrec_ptr->start_sector = next_free_sector())) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
   set_next_sector(dirrec_ptr->start_sector, 0xFFFF);
@@ -266,7 +267,7 @@ void make_dir(void)
   if ((!put_sector(dirrec_ptr->start_sector, sector_buffer)) ||
       (!create_dir_entry(&srchrec_ptr->dir_sector, NULL, fcbname_ptr, 0x10,
                          dirrec_ptr->start_sector, 0, dos_ftime()))) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
   succeed();
@@ -278,14 +279,14 @@ void chdir(void)
   /* Special case for root */
   if ((*filename_ptr != '\\') || (*(filename_ptr + 1))) {
     if (contains_wildcards(fcbname_ptr)) {
-      fail(3);
+      fail(DOSERR_PATH_NOT_FOUND);
       return;
     }
 
     *srch_attr_ptr = 0x10;
     find_first();
     if (r.ax || (!(dirrec_ptr->file_attr & 0x10))) {
-      fail(3);
+      fail(DOSERR_PATH_NOT_FOUND);
       return;
     }
   }
@@ -307,18 +308,18 @@ void close_file(void)
   if (sft->dir_entry_no == 0xff) {
     if (!create_dir_entry(&sft->dir_sector, &sft->dir_entry_no, sft->file_name,
                           sft->file_attr, sft->start_sector, sft->file_size, sft->file_time))
-      fail(5);
+      fail(DOSERR_ACCESS_DENIED);
   }
   else {
     if ((last_sector != sft->dir_sector) && (!get_sector(sft->dir_sector, sector_buffer)))
-      fail(5);
+      fail(DOSERR_ACCESS_DENIED);
     last_sector = sft->dir_sector;
     ((DIRREC_PTR) sector_buffer)[sft->dir_entry_no].file_attr = sft->file_attr;
     ((DIRREC_PTR) sector_buffer)[sft->dir_entry_no].start_sector = sft->start_sector;
     ((DIRREC_PTR) sector_buffer)[sft->dir_entry_no].file_size = sft->file_size;
     ((DIRREC_PTR) sector_buffer)[sft->dir_entry_no].file_time = sft->file_time;
     if (!put_sector(sft->dir_sector, sector_buffer))
-      fail(5);
+      fail(DOSERR_ACCESS_DENIED);
   }
 }
 
@@ -337,7 +338,7 @@ void read_file(void)
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
 
   if (sft->open_mode & 1) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
 
@@ -358,7 +359,7 @@ void write_file(void)
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
 
   if (!(sft->open_mode & 3)) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
 
@@ -447,7 +448,7 @@ void disk_space(void)
 void get_attr(void)
 {
   if (contains_wildcards(fcbname_ptr)) {
-    fail(2);
+    fail(DOSERR_FILE_NOT_FOUND);
     return;
   }
 
@@ -468,13 +469,13 @@ void set_attr()
 
   if ((((uchar) *stack_param_ptr) & 0x10) ||
       (((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_attr & 0x10)) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
 
   ((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_attr = (uchar) *stack_param_ptr;
   if (!put_sector(last_sector, sector_buffer)) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
 }
@@ -512,11 +513,11 @@ void rename_file(void)
     }
   _fmemcpy(srchrec_ptr_2->srch_mask, fcbname_ptr_2, 11);
   if ((ret = ffirst2()) == 3) {
-    fail(3);
+    fail(DOSERR_PATH_NOT_FOUND);
     return;
   }
   else if (!ret) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
 
@@ -537,12 +538,12 @@ void rename_file(void)
         ret = 5;
       else {
         if (!get_sector(last_sector = srchrec_ptr->dir_sector, sector_buffer)) {
-          fail(5);
+          fail(DOSERR_ACCESS_DENIED);
           return;
         }
         ((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_name[0] = (char) 0xE5;
         if (!put_sector(srchrec_ptr->dir_sector, sector_buffer)) {
-          fail(5);
+          fail(DOSERR_ACCESS_DENIED);
           return;
         }
       }
@@ -575,7 +576,7 @@ void delete_file(void)
       ((DIRREC_PTR) sector_buffer)[srchrec_ptr->dir_entry_no].file_name[0] = (char) 0xE5;
       if (      /* dirsector_has_entries(last_sector, sector_buffer) && */
            (!put_sector(last_sector, sector_buffer))) {
-        fail(5);
+        fail(DOSERR_ACCESS_DENIED);
         return;
       }
     }
@@ -661,7 +662,7 @@ void open_existing(void)
   sft = (SFTREC_PTR) MK_FP(r.es, r.di);
 
   if (contains_wildcards(fcbname_ptr)) {
-    fail(3);
+    fail(DOSERR_PATH_NOT_FOUND);
     return;
   }
 
@@ -679,7 +680,7 @@ void open_new(void)
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
 
   if (contains_wildcards(fcbname_ptr)) {
-    fail(3);
+    fail(DOSERR_PATH_NOT_FOUND);
     return;
   }
 
@@ -689,7 +690,7 @@ void open_new(void)
     return;
 
   if ((!r.ax) && (dirrec_ptr->file_attr & 0x19)) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
 
@@ -737,7 +738,7 @@ void open_extended(void)
   sft->open_mode = open_mode;
 
   if (contains_wildcards(fcbname_ptr)) {
-    fail(3);
+    fail(DOSERR_PATH_NOT_FOUND);
     return;
   }
 
@@ -749,19 +750,19 @@ void open_extended(void)
   if (!r.ax) {
     if ((dirrec_ptr->file_attr & 0x18) ||
         ((dirrec_ptr->file_attr & 0x01) && (open_mode & 3)) || (!(action &= 0x000F))) {
-      fail(5);
+      fail(DOSERR_ACCESS_DENIED);
       return;
     }
   }
   else {
     if (!(action &= 0x00F0)) {
-      fail(2);
+      fail(DOSERR_FILE_NOT_FOUND);
       return;
     }
   }
 
   if ((!(open_mode & 3)) && r.ax) {
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
     return;
   }
 
@@ -972,7 +973,7 @@ void interrupt far redirector(ALL_REGS entry_regs)
   // Call the appropriate handling function unless we already know we
   // need to fail
   if (filename_is_char_device)
-    fail(5);
+    fail(DOSERR_ACCESS_DENIED);
   else
     dispatch_table[curr_fxn]();
 
