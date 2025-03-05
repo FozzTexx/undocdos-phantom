@@ -40,7 +40,7 @@
 #define         ROOTDIR_ENTRIES         128
 
 #ifndef MK_FP
-#define MK_FP(a,b)  ((void far *)(((ulong)(a) << 16) | (b)))
+#define MK_FP(a,b)  ((void far *)(((uint32_t)(a) << 16) | (b)))
 #endif
 
 char *signon_string =
@@ -66,9 +66,21 @@ char *usage_string =
 
 /* This is declared in the compiler startup code to mark the
         end of the data segment. */
-extern uint end;
+extern uint16_t end;
+
+/* TSR signature and unload info structure */
+typedef struct {
+  uint8_t cmdline_len;
+  char signature[10];           /* The TSR's signature string */
+  uint16_t psp;                     /* This instance's PSP */
+  uint8_t drive_no;               /* A: is 1, B: is 2, etc. */
+  uint16_t xms_handle;              /* This instance's disk XMS handle */
+  uint8_t far *our_handler;       /* This instance's int 2Fh handler */
+  uint8_t far *prev_handler;      /* Previous int 2Fh handler in the chain */
+} SIGREC, far *SIGREC_PTR;
 
 /* Other global data items */
+SIGREC sigrec = { 8, "PHANTOM ", 0, 0, 0 };     /* Signature record */
 LOLREC_PTR lolptr;              /* pointer to List Of Lists */
 
 /* ------ File system functions ------------------------ */
@@ -78,7 +90,7 @@ void failprog(char *msg)
 {
   if (xms_handle)
     xms_free_block(xms_handle);
-  print_string((uchar far *) msg, TRUE);
+  print_string((uint8_t far *) msg, TRUE);
   exit(1);
 }
 
@@ -106,26 +118,26 @@ int match_to_mask(char far *mask, char far *filename)
 void set_up_pointers(void)
 {
   if (_osmajor == 3) {
-    fcbname_ptr = ((V3_SDA_PTR) sda_ptr)->fcb_name;
-    filename_ptr = ((V3_SDA_PTR) sda_ptr)->file_name + cds_root_size - 1;
-    fcbname_ptr_2 = ((V3_SDA_PTR) sda_ptr)->fcb_name_2;
-    filename_ptr_2 = ((V3_SDA_PTR) sda_ptr)->file_name_2 + cds_root_size - 1;
-    srchrec_ptr = &((V3_SDA_PTR) sda_ptr)->srchrec;
-    dirrec_ptr = &((V3_SDA_PTR) sda_ptr)->dirrec;
-    srchrec_ptr_2 = &((V3_SDA_PTR) sda_ptr)->rename_srchrec;
-    dirrec_ptr_2 = &((V3_SDA_PTR) sda_ptr)->rename_dirrec;
-    srch_attr_ptr = &((V3_SDA_PTR) sda_ptr)->srch_attr;
+    dirrec_ptr1 = &((SDA_PTR_V3) sda_ptr)->dirrec;
+    dirrec_ptr2 = &((SDA_PTR_V3) sda_ptr)->rename_dirrec;
+    fcbname_ptr1 = ((SDA_PTR_V3) sda_ptr)->fcb_name1;
+    fcbname_ptr2 = ((SDA_PTR_V3) sda_ptr)->fcb_name2;
+    filename_ptr1 = ((SDA_PTR_V3) sda_ptr)->path1 + cds_root_size - 1;
+    filename_ptr2 = ((SDA_PTR_V3) sda_ptr)->path2 + cds_root_size - 1;
+    srch_attr_ptr = &((SDA_PTR_V3) sda_ptr)->srch_attr;
+    srchrec_ptr1 = &((SDA_PTR_V3) sda_ptr)->srchrec;
+    srchrec_ptr2 = &((SDA_PTR_V3) sda_ptr)->rename_srchrec;
   }
   else {
-    fcbname_ptr = ((V4_SDA_PTR) sda_ptr)->fcb_name;
-    filename_ptr = ((V4_SDA_PTR) sda_ptr)->file_name + cds_root_size - 1;
-    fcbname_ptr_2 = ((V4_SDA_PTR) sda_ptr)->fcb_name_2;
-    filename_ptr_2 = ((V4_SDA_PTR) sda_ptr)->file_name_2 + cds_root_size - 1;
-    srchrec_ptr = &((V4_SDA_PTR) sda_ptr)->srchrec;
-    dirrec_ptr = &((V4_SDA_PTR) sda_ptr)->dirrec;
-    srchrec_ptr_2 = &((V4_SDA_PTR) sda_ptr)->rename_srchrec;
-    dirrec_ptr_2 = &((V4_SDA_PTR) sda_ptr)->rename_dirrec;
-    srch_attr_ptr = &((V4_SDA_PTR) sda_ptr)->srch_attr;
+    dirrec_ptr1 = &((SDA_PTR_V4) sda_ptr)->dirrec;
+    dirrec_ptr2 = &((SDA_PTR_V4) sda_ptr)->rename_dirrec;
+    fcbname_ptr1 = ((SDA_PTR_V4) sda_ptr)->fcb_name1;
+    fcbname_ptr2 = ((SDA_PTR_V4) sda_ptr)->fcb_name2;
+    filename_ptr1 = ((SDA_PTR_V4) sda_ptr)->path1 + cds_root_size - 1;
+    filename_ptr2 = ((SDA_PTR_V4) sda_ptr)->path2 + cds_root_size - 1;
+    srch_attr_ptr = &((SDA_PTR_V4) sda_ptr)->srch_attr;
+    srchrec_ptr1 = &((SDA_PTR_V4) sda_ptr)->srchrec;
+    srchrec_ptr2 = &((SDA_PTR_V4) sda_ptr)->rename_srchrec;
   }
 }
 
@@ -135,8 +147,8 @@ void set_up_pointers(void)
 
 void get_dos_vars(void)
 {
-  uint segmnt;
-  uint ofset;
+  uint16_t segmnt;
+  uint16_t ofset;
 
   if ((_osmajor < 3) || ((_osmajor == 3) && (_osminor < 10)))
     failprog("Unsupported DOS Version");
@@ -189,18 +201,18 @@ void is_ok_to_load(void)
 
 void set_up_cds(void)
 {
-  V3_CDS_PTR our_cds_ptr;
+  CDS_PTR_V3 our_cds_ptr;
 
   our_cds_ptr = lolptr->cds_ptr;
   if (_osmajor == 3)
 //              our_cds_ptr = our_cds_ptr + (our_drive_no - 1);  // ref: DR_TOO_HIGH
     our_cds_ptr = our_cds_ptr + our_drive_no;
   else {
-    V4_CDS_PTR t = (V4_CDS_PTR) our_cds_ptr;
+    CDS_PTR_V4 t = (CDS_PTR_V4) our_cds_ptr;
 
 //              t = t + (our_drive_no - 1);  // ref: DR_TOO_HIGH
     t = t + our_drive_no;
-    our_cds_ptr = (V3_CDS_PTR) t;
+    our_cds_ptr = (CDS_PTR_V3) t;
   }
 
 //      if (our_drive_no > lolptr->last_drive)  // ref: DR_TOO_HIGH
@@ -232,7 +244,7 @@ void set_up_cds(void)
         chain if possible, make the CDS reflect an invalid drive, and
         free its real and XMS memory. */
 
-static uint ul_save_ss, ul_save_sp;
+static uint16_t ul_save_ss, ul_save_sp;
 static int ul_i;
 
 void exit_ret()
@@ -267,9 +279,9 @@ void exit_ret()
 void unload_latest()
 {
   INTVECT p_vect;
-  V3_CDS_PTR cds_ptr;
+  CDS_PTR_V3 cds_ptr;
   SIGREC_PTR sig_ptr;
-  uint psp;
+  uint16_t psp;
 
   // Note that we step backwards to allow unloading of Multiple copies
   // in reverse order to loading, so that the Int 2Fh chain remains
@@ -277,9 +289,9 @@ void unload_latest()
   for (ul_i = 0x66; ul_i >= 0x60; ul_i--) {
     long far *p;
 
-    p = (long far *) MK_FP(0, ((uint) ul_i * 4));
+    p = (long far *) MK_FP(0, ((uint16_t) ul_i * 4));
     sig_ptr = (SIGREC_PTR) * p;
-    if (_fmemcmp(sig_ptr->signature, (uchar far *) sigrec.signature,
+    if (_fmemcmp(sig_ptr->signature, (uint8_t far *) sigrec.signature,
                  sizeof(sigrec.signature)) == 0)
       break;
   }
@@ -308,11 +320,11 @@ void unload_latest()
 //              cds_ptr += (our_drive_no - 1);  // ref: DR_TOO_HIGH
     cds_ptr += our_drive_no;
   else {
-    V4_CDS_PTR t = (V4_CDS_PTR) cds_ptr;
+    CDS_PTR_V4 t = (CDS_PTR_V4) cds_ptr;
 
 //              t += (our_drive_no - 1);  // ref: DR_TOO_HIGH
     t += our_drive_no;
-    cds_ptr = (V3_CDS_PTR) t;
+    cds_ptr = (CDS_PTR_V3) t;
   }
 
   // switch off the Network and Physical bits for the drive,
@@ -369,7 +381,7 @@ void unload_latest()
 
 void prepare_for_tsr(void)
 {
-  uchar far *buf;
+  uint8_t far *buf;
   int i;
 
   // Find ourselves a free interrupt to call our own. Without it,
@@ -378,7 +390,7 @@ void prepare_for_tsr(void)
   for (i = 0x60; i < 0x67; i++) {
     long far *p;
 
-    p = (long far *) MK_FP(0, ((uint) i * 4));
+    p = (long far *) MK_FP(0, ((uint16_t) i * 4));
     if (*p == 0L)
       break;
   }
@@ -405,12 +417,12 @@ void prepare_for_tsr(void)
 
 void tsr(void)
 {
-  uint tsr_paras;               // Paragraphs to terminate and leave resident.
-  uint highest_seg;
+  uint16_t tsr_paras;               // Paragraphs to terminate and leave resident.
+  uint16_t highest_seg;
 
   _asm mov highest_seg, ds;
 
-  tsr_paras = highest_seg + (((uint) &end) / 16) + 1 - _psp;
+  tsr_paras = highest_seg + (((uint16_t) &end) / 16) + 1 - _psp;
 
   // Plug ourselves into the Int 2Fh chain
   _dos_setvect(DOS_INT_REDIR, redirector);
@@ -419,7 +431,7 @@ void tsr(void)
 
 /* --------------------------------------------------------------------*/
 
-int _cdecl main(uint argc, char **argv)
+int _cdecl main(uint16_t argc, char **argv)
 {
   print_string(signon_string, TRUE);
 
@@ -458,8 +470,8 @@ int _cdecl main(uint argc, char **argv)
   }
 
   our_drive_str[0] &= ~0x20;
-//      our_drive_no = (uchar) (our_drive_str[0] - '@');  // ref: DR_TOO_HIGH
-  our_drive_no = (uchar) (our_drive_str[0] - 'A');
+//      our_drive_no = (uint8_t) (our_drive_str[0] - '@');  // ref: DR_TOO_HIGH
+  our_drive_no = (uint8_t) (our_drive_str[0] - 'A');
 //      if ((our_drive_no > 26) || (our_drive_no < 1))  // ref: DR_TOO_HIGH
   if (our_drive_no > 25) {
     print_string(usage_string, TRUE);

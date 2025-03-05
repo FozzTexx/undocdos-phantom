@@ -1,185 +1,194 @@
-#ifndef _TYPES_H
-#define _TYPES_H
+#ifndef _DOSDATA_H
+#define _DOSDATA_H
 
-#define         TRUE                            1
-#define         FALSE                           0
+#include <stdint.h>
 
-/* ****************************************************
-   Basic typedefs
-   **************************************************** */
+#define TRUE			1
+#define FALSE			0
 
-typedef unsigned int uint;
-typedef unsigned char uchar;
-typedef unsigned long ulong;
+#define DOS_MAX_PATHLEN         256
+#define DOS_FCBNAME_LEN         11
 
-typedef int (far *FARPROC)(void);
+enum {
+  MODE_READONLY         = 0x00,
+  MODE_WRITEONLY        = 0x01,
+  MODE_READWRITE        = 0x02,
+  MODE_CASESENSITVE     = 0x03,
+  MODE_DENYALL          = 0x10,
+  MODE_DENYWRITE        = 0x20,
+  MODE_DENYREAD         = 0x30,
+  MODE_DENYNONE         = 0x40,
+  MODE_NETWORK          = 0x70,
+  MODE_INHERITANCE      = 0x80,
+};
 
-/* ****************************************************
-   Typedefs and structures
-   **************************************************** */
+enum {
+  OPEXT_OPENED          = 1,
+  OPEXT_CREATED         = 2,
+  OPEXT_TRUNCATED       = 3,
+};
 
-#pragma pack(1)
+/* Macro to get value from DOS structs which automatically handles checking _osmajor */
+#define DOS_STRUCT_VALUE(type, var, field) \
+  ((_osmajor == 3) ? ((type##_V3)(var))->field : ((type##_V4)(var))->field)
 
-/* TSR signature and unload info structure */
-typedef struct {
-  uchar cmdline_len;
-  char signature[10];           /* The TSR's signature string */
-  uint psp;                     /* This instance's PSP */
-  uchar drive_no;               /* A: is 1, B: is 2, etc. */
-  uint xms_handle;              /* This instance's disk XMS handle */
-  uchar far *our_handler;       /* This instance's int 2Fh handler */
-  uchar far *prev_handler;      /* Previous int 2Fh handler in the chain */
-} SIGREC, far *SIGREC_PTR;
+/* Similar to above, but returns pointer to field */
+#define DOS_STRUCT_POINTER(type, var, field) \
+  ((_osmajor == 3) ? &((type##_V3)(var))->field : &((type##_V4)(var))->field)
 
+enum {
+  ATTR_READ_ONLY        = 0x01,
+  ATTR_HIDDEN           = 0x02,
+  ATTR_SYSTEM           = 0x04,
+  ATTR_VOLUME_LABEL     = 0x08,
+  ATTR_DIRECTORY        = 0x10,
+  ATTR_ARCHIVE          = 0x20,
+};
+
+#pragma pack(push, 1)
 /* FindFirst/Next data block - ALL DOS VERSIONS */
 typedef struct {
-  uchar drive_no;
-  char srch_mask[11];
-  uchar attr_mask;
-  uint dir_entry_no;
-  uint dir_sector;
-  uchar f1[4];
+  uint8_t drive_num;
+  char pattern[DOS_FCBNAME_LEN];
+  uint8_t attr_mask;
+  uint16_t sequence;
+  uint16_t dir_sector;
+  uint8_t _reserved1[4];
 } SRCHREC, far *SRCHREC_PTR;
+
+/* DOS Directory entry for 'found' file - ALL DOS VERSIONS */
+typedef struct {
+  char fcb_name[DOS_FCBNAME_LEN];
+  uint8_t attr;
+  uint8_t _reserved1[10];
+  union {
+    struct {
+      uint16_t time, date;
+    };
+    uint32_t datetime;
+  };
+  uint16_t start_sector;
+  uint32_t size;
+} DIRREC, far *DIRREC_PTR;
+
+/* Swappable DOS Area - DOS VERSION 3.xx */
+typedef struct {
+  uint8_t _reserved0[12];
+  uint8_t far *current_dta;
+  uint8_t _reserved1[30];
+  uint8_t dd;
+  uint8_t mm;
+  uint16_t yy_1980;
+  uint8_t _reserved2[96];
+  char path1[128];
+  char path2[128];
+  SRCHREC srchrec;
+  DIRREC dirrec;
+  uint8_t _reserved3[81];
+  char fcb_name1[DOS_FCBNAME_LEN];
+  uint8_t _reserved4;
+  char fcb_name2[DOS_FCBNAME_LEN];
+  uint8_t _reserved5[11];
+  uint8_t srch_attr;
+  uint8_t open_mode;
+  uint8_t _reserved6[48];
+  uint8_t far *cdsptr;
+  uint8_t _reserved7[72];
+  SRCHREC rename_srchrec;
+  DIRREC rename_dirrec;
+} SDA_V3, far *SDA_PTR_V3;
+
+/* Swappable DOS Area - DOS VERSION 4.xx */
+typedef struct {
+  uint8_t _reserved0[12];
+  uint8_t far *current_dta;
+  uint8_t _reserved1[32];
+  uint8_t dd;
+  uint8_t mm;
+  uint16_t yy_1980;
+  uint8_t _reserved2[106];
+  char path1[128];
+  char path2[128];
+  SRCHREC srchrec;
+  DIRREC dirrec;
+  uint8_t _reserved3[88];
+  char fcb_name1[DOS_FCBNAME_LEN];
+  uint8_t _reserved4;
+  char fcb_name2[DOS_FCBNAME_LEN];
+  uint8_t _reserved5[11];
+  uint8_t srch_attr;
+  uint8_t open_mode;
+  uint8_t _reserved6[51];
+  uint8_t far *cdsptr;
+  uint8_t _reserved7[87];
+  uint16_t action_2E;
+  uint16_t attr_2E;
+  uint16_t mode_2E;
+  uint8_t _reserved8[29];
+  SRCHREC rename_srchrec;
+  DIRREC rename_dirrec;
+} SDA_V4, far *SDA_PTR_V4;
+
+/* DOS Current directory structure - DOS VERSION 3.xx */
+typedef struct {
+  char current_path[67];
+  uint16_t flags;
+  uint8_t _reserved1[10];
+  uint16_t root_ofs;
+} CDS_V3, far *CDS_PTR_V3;
+
+/* DOS Current directory structure - DOS VERSION 4.xx */
+typedef struct {
+  char current_path[67];
+  uint16_t flags;
+  uint8_t _reserved1[10];
+  uint16_t root_ofs;
+  uint8_t _reserved2[7];
+} CDS_V4, far *CDS_PTR_V4;
+
+/* DOS List of lists structure - DOS VERSIONS 3.1 thru 4 */
+/* We don't need much of it. */
+typedef struct {
+  uint8_t _reserved1[22];
+  CDS_PTR_V3 cds_ptr;
+  uint8_t _reserved2[7];
+  uint8_t last_drive;
+} LOLREC, far *LOLREC_PTR;
 
 /* DOS System File Table entry - ALL DOS VERSIONS */
 // Some of the fields below are defined by the redirector, and differ
 // from the SFT normally found under DOS
 typedef struct {
-  uint handle_count;
-  uint open_mode;
-  uchar file_attr;
-  uint dev_info_word;
-  uchar far *dev_drvr_ptr;
-  uint start_sector;
-  ulong file_time;
-  long file_size;
-  long file_pos;
-  uint rel_sector;
-  uint abs_sector;
-  uint dir_sector;
-  uchar dir_entry_no;
-  char file_name[11];
+  uint16_t handle_count;
+  uint16_t open_mode;
+  uint8_t attr;
+  uint16_t dev_info_word;
+  uint8_t far *dev_drvr_ptr;
+  uint16_t start_sector;
+  union {
+    struct {
+      uint16_t time, date;
+    };
+    uint32_t datetime;
+  };
+  uint32_t size;
+  uint32_t pos;
+  uint16_t rel_sector;
+  uint16_t abs_sector;
+  uint16_t dir_sector;
+  uint8_t sequence;
+  char fcb_name[DOS_FCBNAME_LEN];
 } SFTREC, far *SFTREC_PTR;
-
-/* DOS Current directory structure - DOS VERSION 3.xx */
-typedef struct {
-  char current_path[67];
-  uint flags;
-  uchar f1[10];
-  uint root_ofs;
-} V3_CDS, far *V3_CDS_PTR;
-
-/* DOS Current directory structure - DOS VERSION 4.xx */
-typedef struct {
-  char current_path[67];
-  uint flags;
-  uchar f1[10];
-  uint root_ofs;
-  uchar f2[7];
-} V4_CDS, far *V4_CDS_PTR;
-
-/* DOS Directory entry for 'found' file - ALL DOS VERSIONS */
-typedef struct {
-  char file_name[11];
-  uchar file_attr;
-  uchar f1[10];
-  ulong file_time;
-  uint start_sector;
-  long file_size;
-} DIRREC, far *DIRREC_PTR;
-
-/* Swappable DOS Area - DOS VERSION 3.xx */
-
-typedef struct {
-  uchar f0[12];
-  uchar far *current_dta;
-  uchar f1[30];
-  uchar dd;
-  uchar mm;
-  uint yy_1980;
-  uchar f2[96];
-  char file_name[128];
-  char file_name_2[128];
-  SRCHREC srchrec;
-  DIRREC dirrec;
-  uchar f3[81];
-  char fcb_name[11];
-  uchar f4;
-  char fcb_name_2[11];
-  uchar f5[11];
-  uchar srch_attr;
-  uchar open_mode;
-  uchar f6[48];
-  uchar far *cdsptr;
-  uchar f7[72];
-  SRCHREC rename_srchrec;
-  DIRREC rename_dirrec;
-} V3_SDA, far *V3_SDA_PTR;
-
-/* Swappable DOS Area - DOS VERSION 4.xx */
-typedef struct {
-  uchar f0[12];
-  uchar far *current_dta;
-  uchar f1[32];
-  uchar dd;
-  uchar mm;
-  uint yy_1980;
-  uchar f2[106];
-  char file_name[128];
-  char file_name_2[128];
-  SRCHREC srchrec;
-  DIRREC dirrec;
-  uchar f3[88];
-  char fcb_name[11];
-  uchar f4;
-  char fcb_name_2[11];
-  uchar f5[11];
-  uchar srch_attr;
-  uchar open_mode;
-  uchar f6[51];
-  uchar far *cdsptr;
-  uchar f7[87];
-  uint action_2E;
-  uint attr_2E;
-  uint mode_2E;
-  uchar f8[29];
-  SRCHREC rename_srchrec;
-  DIRREC rename_dirrec;
-} V4_SDA, far *V4_SDA_PTR;
-
-/* DOS List of lists structure - DOS VERSIONS 3.1 thru 4 */
-/* We don't need much of it. */
-typedef struct {
-  uchar f1[22];
-  V3_CDS_PTR cds_ptr;
-  uchar f2[7];
-  uchar last_drive;
-} LOLREC, far *LOLREC_PTR;
 
 /* DOS 4.00 and above lock/unlock region structure */
 /* see lockfil() below (Thanks to Martin Westermeier.) */
 typedef struct {
-  ulong region_offset;
-  ulong region_length;
-  uchar f0[13];
+  uint32_t region_offset;
+  uint32_t region_length;
+  uint8_t f0[13];
   char file_name[80];           // 80 is a guess
 } LOCKREC, far *LOCKREC_PTR;
 
-/* The following structure is compiler specific, and maps
-        onto the registers pushed onto the stack for an interrupt
-        function. */
-typedef struct {
-#ifdef __BORLANDC__
-  uint bp, di, si, ds, es, dx, cx, bx, ax;
-#else
-#ifdef __WATCOMC__
-  uint gs, fs;
-#endif /* __WATCOMC__ */
-  uint es, ds, di, si, bp, sp, bx, dx, cx, ax;
-#endif
-  uint ip, cs, flags;
-} ALL_REGS;
+#pragma pack(pop)
 
-#pragma pack()
-
-#endif /* _TYPES_H */
+#endif /* _DOSDATA_H */

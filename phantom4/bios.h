@@ -5,7 +5,7 @@
 
 extern void print_char(char c);
 extern void print_string(char far *str, int add_newline);
-extern char *my_ltoa(ulong num);
-extern char *my_hex(ulong num, int len);
+extern char *my_ltoa(uint32_t num);
+extern char *my_hex(uint32_t num, int len);
 
 #endif /* _BIOS_H */
