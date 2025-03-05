@@ -39,7 +39,7 @@ DIRREC_PTR dirrec_ptr;          /* ptr to 1st found dir entry area in SDA */
 DIRREC_PTR dirrec_ptr_2;        /* ptr to 1st found dir entry area in SDA */
 
 #ifdef __WATCOMC__
-#define FCARRY				INTR_CF
+#define FCARRY                          INTR_CF
 #else
 #define FCARRY                          0x0001
 #endif
@@ -90,8 +90,8 @@ void inquiry(void)
   r.ax = 0x00FF;
 }
 
-/* FindNext  - subfunction 1Ch */
-void fnext(void)
+/* Find_Next  - subfunction 1Ch */
+void find_next(void)
 {
   if (!find_next_entry(srchrec_ptr->srch_mask,
                        srchrec_ptr->attr_mask, dirrec_ptr->file_name,
@@ -103,7 +103,7 @@ void fnext(void)
   }
 }
 
-/* Internal findnext for delete and rename processing */
+/* Internal find_next for delete and rename processing */
 uint fnext2(void)
 {
   return (find_next_entry(srchrec_ptr_2->srch_mask, 0x20,
@@ -112,21 +112,21 @@ uint fnext2(void)
                           &srchrec_ptr_2->dir_entry_no)) ? 0 : 18;
 }
 
-/* FindFirst - subfunction 1Bh */
+/* Find_First - subfunction 1Bh */
 
 /* This function looks a little odd because of the embedded call to
-   fnext(). This arises from the my view that findfirst is simply
-   a findnext with some initialization overhead: findfirst has to
-   locate the directory in which findnext is to iterate, and
+   find_next(). This arises from the my view that find_first is simply
+   a find_next with some initialization overhead: find_first has to
+   locate the directory in which find_next is to iterate, and
    initialize the SDB state to 'point to' the first entry. It then
-   gets that first entry, using findnext.
+   gets that first entry, using find_next.
    The r.ax test at the end of the function is because, to mimic
-   DOS behavior, a findfirst that finds no matching entry should
-   return an error 2 (file not found), whereas a subsequent findnext
+   DOS behavior, a find_first that finds no matching entry should
+   return an error 2 (file not found), whereas a subsequent find_next
    that finds no matching entry should return error 18 (no more
    files). */
 
-void ffirst(void)
+void find_first(void)
 {
   char far *path;
   int success;
@@ -149,14 +149,14 @@ void ffirst(void)
   srchrec_ptr->attr_mask = *srch_attr_ptr;
   srchrec_ptr->drive_no = (uchar) (our_drive_no | 0xC0);
 
-  fnext();
+  find_next();
   /* No need to check r.flags & FCARRY; if ax is 18,
      FCARRY must have been set. */
   if (r.ax == 18)
-    r.ax = 2;   // make fnext error code suitable to ffirst
+    r.ax = 2;   // make find_next error code suitable to find_first
 }
 
-/* Internal findfirst for delete and rename processing */
+/* Internal find_first for delete and rename processing */
 uint ffirst2(void)
 {
   if (!get_dir_start_sector(filename_ptr_2, &srchrec_ptr_2->dir_sector))
@@ -169,7 +169,7 @@ uint ffirst2(void)
 }
 
 /* ReMove Directory - subfunction 01h */
-void rd(void)
+void rename_dir(void)
 {
   /* special case for root */
   if ((*filename_ptr == '\\') && (!*(filename_ptr + 1))) {
@@ -183,7 +183,7 @@ void rd(void)
   _fstrcpy(filename_ptr_2, filename_ptr);
   *srch_attr_ptr = 0x10;
 
-  ffirst();
+  find_first();
   if (r.ax || (!(dirrec_ptr->file_attr & 0x10))) {
     r.ax = 3;
     return;
@@ -223,7 +223,7 @@ void rd(void)
 }
 
 /* Make Directory - subfunction 03h */
-void md(void)
+void make_dir(void)
 {
   /* special case for root */
   if ((*filename_ptr == '\\') && (!*(filename_ptr + 1))) {
@@ -237,7 +237,7 @@ void md(void)
   }
 
   *srch_attr_ptr = 0x3f;
-  ffirst();
+  find_first();
   if (r.ax == 0)        // we need error 2 here
   {
     fail(5);
@@ -273,7 +273,7 @@ void md(void)
 }
 
 /* Change Directory - subfunction 05h */
-void cd(void)
+void chdir(void)
 {
   /* Special case for root */
   if ((*filename_ptr != '\\') || (*(filename_ptr + 1))) {
@@ -283,7 +283,7 @@ void cd(void)
     }
 
     *srch_attr_ptr = 0x10;
-    ffirst();
+    find_first();
     if (r.ax || (!(dirrec_ptr->file_attr & 0x10))) {
       fail(3);
       return;
@@ -293,7 +293,7 @@ void cd(void)
 }
 
 /* Close File - subfunction 06h */
-void clsfil(void)
+void close_file(void)
 {
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
 
@@ -323,7 +323,7 @@ void clsfil(void)
 }
 
 /* Commit File - subfunction 07h */
-void cmmtfil(void)
+void commit_file(void)
 {
   /* We support this but don't do anything... */
   return;
@@ -332,7 +332,7 @@ void cmmtfil(void)
 /* Read from File - subfunction 08h */
 // For version that handles critical errors,
 // see Undocumented DOS, 2nd edition, chapter 8
-void readfil(void)
+void read_file(void)
 {
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
 
@@ -353,7 +353,7 @@ void readfil(void)
 }
 
 /* Write to File - subfunction 09h */
-void writfil(void)
+void write_file(void)
 {
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
 
@@ -384,7 +384,7 @@ void writfil(void)
         not actually honor LOCK/UNLOCK requests. The following function
         supports locking only before, and both locking/unlocking after
         DOS 4.0 */
-void lockfil(void)
+void lock_file(void)
 {
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
   LOCKREC_PTR lockptr;
@@ -419,7 +419,7 @@ void lockfil(void)
 
 /* We support this function only to illustrate how it works. The following
         function supports only unlocking before DOS 4.0 */
-void unlockfil(void)
+void unlock_file(void)
 {
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
   ulong region_offset;
@@ -435,7 +435,7 @@ void unlockfil(void)
 }
 
 /* Get Disk Space - subfunction 0Ch */
-void dskspc(void)
+void disk_space(void)
 {
   r.ax = 1;
   r.bx = total_sectors;
@@ -444,7 +444,7 @@ void dskspc(void)
 }
 
 /* Get File Attributes - subfunction 0Fh */
-void getfatt(void)
+void get_attr(void)
 {
   if (contains_wildcards(fcbname_ptr)) {
     fail(2);
@@ -452,7 +452,7 @@ void getfatt(void)
   }
 
   *srch_attr_ptr = 0x3f;
-  ffirst();
+  find_first();
   if (r.ax)
     return;
 
@@ -460,9 +460,9 @@ void getfatt(void)
 }
 
 /* Set File Attributes - subfunction 0Eh */
-void setfatt()
+void set_attr()
 {
-  getfatt();
+  get_attr();
   if (r.flags & FCARRY)
     return;
 
@@ -480,7 +480,7 @@ void setfatt()
 }
 
 /* Rename File - subfunction 11h */
-void renfil(void)
+void rename_file(void)
 {
   char far *path;
   uint ret = 0, dir_sector;
@@ -488,7 +488,7 @@ void renfil(void)
 
   *srch_attr_ptr = 0x21;
   srchrec_ptr_2->attr_mask = 0x3f;
-  ffirst();
+  find_first();
   if (r.ax)
     return;
 
@@ -547,7 +547,7 @@ void renfil(void)
         }
       }
     }
-    fnext();
+    find_next();
   }
 
   if (r.ax == 18)
@@ -560,12 +560,12 @@ void renfil(void)
 }
 
 /* Delete File - subfunction 13h */
-void delfil(void)
+void delete_file(void)
 {
   uint ret = 0;
 
   *srch_attr_ptr = 0x21;
-  ffirst();
+  find_first();
 
   while (!r.ax) {
     if (dirrec_ptr->file_attr & 1)
@@ -579,7 +579,7 @@ void delfil(void)
         return;
       }
     }
-    fnext();
+    find_next();
   }
 
   if (r.ax == 18)
@@ -620,10 +620,10 @@ void init_sft(SFTREC_PTR sft)
 
 /* Note that the following function uses dirrec_ptr to supply much of
    the SFT data. This is because an open of an existing file is
-   effectively a findfirst with data returned to the caller (DOS) in
+   effectively a find_first with data returned to the caller (DOS) in
    an SFT, rather than a found file directory entry buffer. So this
    function uses the knowledge that it is immediately preceded by a
-   ffirst(), and that the data is avalable in dirrec_ptr. */
+   find_first(), and that the data is avalable in dirrec_ptr. */
 
 void fill_sft(SFTREC_PTR sft, int use_found_1, int truncate)
 {
@@ -652,7 +652,7 @@ void fill_sft(SFTREC_PTR sft, int use_found_1, int truncate)
 }
 
 /* Open Existing File - subfunction 16h */
-void opnfil(void)
+void open_existing(void)
 {
   SFTREC_PTR sft;
 
@@ -666,7 +666,7 @@ void opnfil(void)
   }
 
   *srch_attr_ptr = 0x27;
-  ffirst();
+  find_first();
   if (!r.ax) {
     fill_sft(sft, TRUE, FALSE);
     init_sft(sft);
@@ -674,7 +674,7 @@ void opnfil(void)
 }
 
 /* Truncate/Create File - subfunction 17h */
-void creatfil(void)
+void open_new(void)
 {
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
 
@@ -684,7 +684,7 @@ void creatfil(void)
   }
 
   *srch_attr_ptr = 0x3f;
-  ffirst();
+  find_first();
   if ((r.flags & FCARRY) && (r.ax != 2))
     return;
 
@@ -699,7 +699,7 @@ void creatfil(void)
 }
 
 /* This function is never called! DOS fiddles with position internally */
-void skfmend(void)
+void seek_file(void)
 {
   long seek_amnt;
   SFTREC_PTR sft;
@@ -715,7 +715,7 @@ void skfmend(void)
   r.ax = (uint) (sft->file_pos & 0xFFFF);
 }
 
-void unknown_fxn_2D()
+void extended_attr()
 {
   r.ax = 2;
   /* Only called in v4.01, this is what MSCDEX returns */
@@ -727,7 +727,7 @@ void unknown_fxn_2D()
 #define OPEN_IF_EXISTS                  0x01
 #define REPLACE_IF_EXISTS               0x02
 
-void special_opnfil(void)
+void open_extended(void)
 {
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
   uint open_mode, action;
@@ -742,7 +742,7 @@ void special_opnfil(void)
   }
 
   *srch_attr_ptr = 0x3f;
-  ffirst();
+  find_first();
   if ((r.flags & FCARRY) && (r.ax != 2))
     return;
 
@@ -780,39 +780,39 @@ typedef void (*PROC)(void);
 
 PROC dispatch_table[] = {
   inquiry,              /* 0x00h */
-  rd,                   /* 0x01h */
+  rename_dir,                   /* 0x01h */
   unsupported,          /* 0x02h */
-  md,                   /* 0x03h */
+  make_dir,                   /* 0x03h */
   unsupported,          /* 0x04h */
-  cd,                   /* 0x05h */
-  clsfil,               /* 0x06h */
-  cmmtfil,              /* 0x07h */
-  readfil,              /* 0x08h */
-  writfil,              /* 0x09h */
-  lockfil,              /* 0x0Ah */
-  unlockfil,            /* 0x0Bh */
-  dskspc,               /* 0x0Ch */
+  chdir,                   /* 0x05h */
+  close_file,               /* 0x06h */
+  commit_file,              /* 0x07h */
+  read_file,              /* 0x08h */
+  write_file,              /* 0x09h */
+  lock_file,              /* 0x0Ah */
+  unlock_file,            /* 0x0Bh */
+  disk_space,               /* 0x0Ch */
   unsupported,          /* 0x0Dh */
-  setfatt,              /* 0x0Eh */
-  getfatt,              /* 0x0Fh */
+  set_attr,              /* 0x0Eh */
+  get_attr,              /* 0x0Fh */
   unsupported,          /* 0x10h */
-  renfil,               /* 0x11h */
+  rename_file,               /* 0x11h */
   unsupported,          /* 0x12h */
-  delfil,               /* 0x13h */
+  delete_file,               /* 0x13h */
   unsupported,          /* 0x14h */
   unsupported,          /* 0x15h */
-  opnfil,               /* 0x16h */
-  creatfil,             /* 0x17h */
+  open_existing,               /* 0x16h */
+  open_new,             /* 0x17h */
   unsupported,          /* 0x18h */
   unsupported,          /* 0x19h */
   unsupported,          /* 0x1Ah */
-  ffirst,               /* 0x1Bh */
-  fnext,                /* 0x1Ch */
+  find_first,            /* 0x1Bh */
+  find_next,             /* 0x1Ch */
   unsupported,          /* 0x1Dh */
   unsupported,          /* 0x1Eh */
   unsupported,          /* 0x1Fh */
   unsupported,          /* 0x20h */
-  skfmend,              /* 0x21h */
+  seek_file,              /* 0x21h */
   unsupported,          /* 0x22h */
   unsupported,          /* 0x23h */
   unsupported,          /* 0x24h */
@@ -824,8 +824,8 @@ PROC dispatch_table[] = {
   unsupported,          /* 0x2Ah */
   unsupported,          /* 0x2Bh */
   unsupported,          /* 0x2Ch */
-  unknown_fxn_2D,       /* 0x2Dh */
-  special_opnfil        /* 0x2Eh */
+  extended_attr,       /* 0x2Dh */
+  open_extended         /* 0x2Eh */
 };
 
 #define MAX_FXN_NO (sizeof(dispatch_table) / sizeof(PROC))
@@ -948,14 +948,14 @@ void interrupt far redirector(ALL_REGS entry_regs)
   our_sp = (FP_OFF(our_stack) + 15) >> 4;
   our_ss = FP_SEG(our_stack) + our_sp;
   our_sp = STACK_SIZE - 2 - (((our_sp - (FP_OFF(our_stack) >> 4)) << 4)
-			     - (FP_OFF(our_stack) & 0xf));
-    
+                             - (FP_OFF(our_stack) & 0xf));
+
   _asm {
     mov dos_sp, sp;
 
     mov ax, our_ss;
     mov cx, our_sp;
-      
+
     // activate new stack
     cli;
     mov ss, ax;
@@ -986,7 +986,7 @@ void interrupt far redirector(ALL_REGS entry_regs)
 
   cur_ss = getSS();
   cur_sp = getSP();
-  
+
   // put the possibly changed registers back on the stack, and return
   entry_regs = r;
   return;
@@ -995,4 +995,3 @@ void interrupt far redirector(ALL_REGS entry_regs)
  chain_on:
   _chain_intr(prev_int2f_vector);
 }
-
