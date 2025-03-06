@@ -94,22 +94,6 @@ void failprog(char *msg)
   exit(1);
 }
 
-/* See whether the filename matches the mask, one character
-        position at a time. A wildcard ? in tha mask matches any
-        character in the filename, any other character in the mask,
-        including spaces, must match exactly */
-
-int match_to_mask(char far *mask, char far *filename)
-{
-  int i;
-
-  for (i = 0; i < 11; i++)
-    if ((mask[i] != filename[i]) && (mask[i] != '?'))
-      return FALSE;
-
-  return TRUE;
-}
-
 /* ---- Utility and startup functions --------------*/
 
 /* Deal with differences in DOS version once, and set up a set
@@ -433,6 +417,8 @@ void tsr(void)
 
 int _cdecl main(uint16_t argc, char **argv)
 {
+  uint16_t disk_size = 0;
+
   print_string(signon_string, TRUE);
 
   // See what parameters we have...
@@ -479,7 +465,7 @@ int _cdecl main(uint16_t argc, char **argv)
   }
 
   // Initialize XMS and alloc the 'disk space'
-  set_up_xms_disk();
+  set_up_xms_disk(disk_size);
   is_ok_to_load();
   get_dos_vars();
   set_up_cds();

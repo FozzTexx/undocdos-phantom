@@ -100,3 +100,18 @@ int is_a_character_device(uint16_t dos_ds)
   return result;
 }
 
+/* See whether the filename matches the mask, one character
+   position at a time. A wildcard ? in tha mask matches any
+   character in the filename, any other character in the mask,
+   including spaces, must match exactly */
+
+int match_to_mask(char far *mask, char far *filename)
+{
+  int i;
+
+  for (i = 0; i < 11; i++)
+    if ((mask[i] != filename[i]) && (mask[i] != '?'))
+      return FALSE;
+
+  return TRUE;
+}

@@ -13,7 +13,7 @@ enum {
   MODE_READONLY         = 0x00,
   MODE_WRITEONLY        = 0x01,
   MODE_READWRITE        = 0x02,
-  MODE_CASESENSITVE     = 0x03,
+  MODE_CASESENSITVE     = 0x04,
   MODE_DENYALL          = 0x10,
   MODE_DENYWRITE        = 0x20,
   MODE_DENYREAD         = 0x30,
@@ -43,6 +43,8 @@ enum {
   ATTR_VOLUME_LABEL     = 0x08,
   ATTR_DIRECTORY        = 0x10,
   ATTR_ARCHIVE          = 0x20,
+  ATTR_DEVICE           = 0x40,
+  ATTR_NORMAL           = 0x80,
 };
 
 #pragma pack(push, 1)
@@ -51,8 +53,12 @@ typedef struct {
   uint8_t drive_num;
   char pattern[DOS_FCBNAME_LEN];
   uint8_t attr_mask;
-  uint16_t sequence;
+  uint16_t index;
+#ifdef DIRECT_DRIVE
   uint16_t dir_sector;
+#else
+  uint16_t dir_handle;
+#endif
   uint8_t _reserved1[4];
 } SRCHREC, far *SRCHREC_PTR;
 
@@ -164,7 +170,11 @@ typedef struct {
   uint8_t attr;
   uint16_t dev_info_word;
   uint8_t far *dev_drvr_ptr;
+#ifdef DIRECT_DRIVE
   uint16_t start_sector;
+#else
+  uint16_t file_handle;
+#endif
   union {
     struct {
       uint16_t time, date;
@@ -176,7 +186,7 @@ typedef struct {
   uint16_t rel_sector;
   uint16_t abs_sector;
   uint16_t dir_sector;
-  uint8_t sequence;
+  uint8_t index;
   char fcb_name[DOS_FCBNAME_LEN];
 } SFTREC, far *SFTREC_PTR;
 

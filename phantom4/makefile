@@ -2,14 +2,14 @@ TARGET  = phantom4.exe
 AS      = wasm -q
 ASFLAGS = -0 -mt -bt=DOS
 CC      = wcc -q
-CFLAGS  = -0 -bt=dos -ms -osh -zu $(CPPFLAGS)
+CFLAGS  = -0 -bt=dos -ms -osh -zu $(CPPFLAGS) -I../../fujinet-rs232/sys
 LD	= wlink OPTION quiet
 LDFLAGS = &
 	SYSTEM dos &
 	OPTION MAP
 
 CFILES  = phantom.c bios.c dosfunc.c xms.c ramdrive.c redir.c
-OBJS = $(CFILES:.c=.obj) $(AFILES:.asm=.obj)
+OBJS = $(CFILES:.c=.obj) $(AFILES:.asm=.obj) ../../fujinet-rs232/sys/print.obj
 
 $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) &

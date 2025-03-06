@@ -2,11 +2,18 @@
 #define _RAMDRIVE_H
 
 #include "dosdata.h"
+#ifdef DIRECT_DRIVE
 #include "xms.h"
+#endif
 
 #define         SECTOR_SIZE             1024    // 1024b/sector allows for 64M of XMS
 
+extern void set_up_xms_disk(uint16_t req_size);
+
+// FIXME - this should be static inside ramdrive.c
 extern uint16_t xms_handle;
+
+#ifdef DIRECT_DRIVE
 extern uint16_t last_sector;
 extern uint8_t sector_buffer[];
 extern uint16_t disk_size;
@@ -31,17 +38,14 @@ extern void chop_file(uint32_t file_pos, uint16_t far *start_sec_ptr,
 extern void write_data(uint32_t far *file_pos_ptr, uint16_t *len_ptr, uint8_t far *buf,
                        uint16_t far *start_sec_ptr, uint16_t far *last_rel_ptr,
                        uint16_t far *last_abs_ptr);
-extern void set_up_xms_disk(void);
-
-#define get_sector(sec, buf)                                         \
-        xms_copy_to_real(xms_handle, (uint32_t) SECTOR_SIZE * (sec), \
-                SECTOR_SIZE, (uint8_t far *) (buf))
-
-#define put_sector(sec, buf)                                         \
-        xms_copy_fm_real(xms_handle, (uint32_t) SECTOR_SIZE * (sec), \
-                SECTOR_SIZE, (uint8_t far *) (buf))
-
-#define         FREE_SECTOR_CHAIN(sec)                               \
-        while ((sec) != 0xFFFF) (sec) = set_next_sector((sec), 0)
+#else
+extern int ram_open(char far *path, int flags);
+extern int ram_close(int fd);
+extern int ram_read(int fd, void far *buf, uint16_t count);
+extern int ram_write(int fd, const void far *buf, uint16_t count);
+extern int ram_opendir(char far *name);
+extern int ram_closedir(int dirp);
+extern DIRREC_PTR ram_readdir(int dirp);
+#endif
 
 #endif /* _RAMDRIVE_H */

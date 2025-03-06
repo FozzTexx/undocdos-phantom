@@ -3,11 +3,13 @@
 #include "dosfunc.h"
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+
+#include "debug.h"
 
 // FIXME - doesn't belong here
 extern void failprog(char *msg);
 extern void get_fcbname_from_path(char far *path, char far *fcbname);
-extern int match_to_mask(char far *mask, char far *filename);
 
 #define         DIRREC_PER_SECTOR       (SECTOR_SIZE / sizeof(DIRREC))
 #define         DEF_DISK_SIZE           0xFFFE  // Default attempted allocation is_all
@@ -24,6 +26,17 @@ uint16_t FAT_page[FATPAGE_SIZE];    /* buffer for FAT entries */
 int cur_FAT_page = -1;          /* index of FAT page in buffer */
 int FAT_page_dirty = FALSE;     /* Has current FAT page been updated */
 uint16_t last_sector = 0xffff;      /* last sector read into sector buffer */
+
+#define get_sector(sec, buf)                                         \
+  xms_copy_to_real(xms_handle, (uint32_t) SECTOR_SIZE * (sec),       \
+                   SECTOR_SIZE, (uint8_t far *) (buf))
+
+#define put_sector(sec, buf)                                         \
+  xms_copy_fm_real(xms_handle, (uint32_t) SECTOR_SIZE * (sec),       \
+                   SECTOR_SIZE, (uint8_t far *) (buf))
+
+#define FREE_SECTOR_CHAIN(sec)                                       \
+        while ((sec) != 0xFFFF) (sec) = set_next_sector((sec), 0)
 
 /* Check that the page of FAT entries for the supplied sector is in
         the buffer. If it isn't, go get it, but write back the currently
@@ -112,7 +125,7 @@ uint16_t next_free_sector(void)
    at the expense of memory footprint (2k of FAT per 1024kb disk space).
 */
 
-void set_up_xms_disk(void)
+void set_up_xms_disk(uint16_t req_size)
 {
   uint32_t count, ofs;
   uint16_t len;
@@ -121,7 +134,9 @@ void set_up_xms_disk(void)
   if (!xms_is_present())
     failprog("XMS not present.");
 
-  if ((disk_size = min(disk_size, xms_kb_avail())) < MIN_DISK_SIZE)
+  if (!req_size)
+    req_size = DEF_DISK_SIZE;
+  if ((disk_size = min(req_size, xms_kb_avail())) < MIN_DISK_SIZE)
     failprog("Need a minimum of 128kb XMS.");
 
   // The allocation is made up of n sectors and
@@ -178,6 +193,7 @@ int get_dir_start_sector(char far *path, uint16_t far *abs_sector_ptr)
   char far *path_end = path + _fstrlen(path);
   int i;
 
+  consolef("GET_DIR_START_SECTOR path=\"%ls\" abs_sector=%04x\n", path, *abs_sector_ptr);
   while (path != path_end) {
     for (next_dir = ++path; *next_dir && (*next_dir != '\\'); next_dir++);
     *next_dir = 0;
@@ -221,45 +237,56 @@ int find_next_entry(char far *mask, uint8_t attr_mask, char far *filename,
                     uint16_t far *dir_sector_ptr, uint16_t far *dir_entryno_ptr)
 {
   DIRREC *dr = (DIRREC *) sector_buffer;
-  int i = *dir_entryno_ptr + 1;
+  int idx = *dir_entryno_ptr + 1;
   uint16_t abs_sector = *dir_sector_ptr;
 
+  consolef("FIND_NEXT_ENTRY IN mask=\"%ls\" attr_mask=%02x filename=\"%ls\" attr=%02x file_time=%08lx start_sec=%04x file_size=%08lx dir_sector=%04x dir_entryno=%04x\n", mask, attr_mask, filename, *attr_ptr, *file_time_ptr, *start_sec_ptr, *file_size_ptr, *dir_sector_ptr, *dir_entryno_ptr);
   for (;;) {
-    if (abs_sector != last_sector)
-      if (!get_sector(abs_sector, sector_buffer))
+    if (abs_sector != last_sector) {
+      if (!get_sector(abs_sector, sector_buffer))  {
+	consolef("FIND_NEXT_ENTRY FAIL 1\n");
         return FALSE;
+      }
       else
         last_sector = abs_sector;
-    for (; i < DIRREC_PER_SECTOR; i++) {
-      if (!dr[i].fcb_name[0])
+    }
+    for (; idx < DIRREC_PER_SECTOR; idx++) {
+      if (!dr[idx].fcb_name[0]) {
+	consolef("FIND_NEXT_ENTRY FAIL 2\n");
         return FALSE;
-      if (dr[i].fcb_name[0] == (char) 0xE5)
+      }
+      if (dr[idx].fcb_name[0] == (char) 0xE5)
         continue;
-      if (match_to_mask(mask, dr[i].fcb_name) &&
-          (!(((attr_mask == 0x08) && (!(dr[i].attr & 0x08))) ||
-             ((dr[i].attr & 0x10) && (!(attr_mask & 0x10))) ||
-             ((dr[i].attr & 0x08) && (!(attr_mask & 0x08))) ||
-             ((dr[i].attr & 0x04) && (!(attr_mask & 0x04))) ||
-             ((dr[i].attr & 0x02) && (!(attr_mask & 0x02)))))) {
+      if (match_to_mask(mask, dr[idx].fcb_name) &&
+          (!(((attr_mask == 0x08) && (!(dr[idx].attr & 0x08))) ||
+             ((dr[idx].attr & 0x10) && (!(attr_mask & 0x10))) ||
+             ((dr[idx].attr & 0x08) && (!(attr_mask & 0x08))) ||
+             ((dr[idx].attr & 0x04) && (!(attr_mask & 0x04))) ||
+             ((dr[idx].attr & 0x02) && (!(attr_mask & 0x02)))))) {
         *dir_sector_ptr = abs_sector;
-        *dir_entryno_ptr = i;
+        *dir_entryno_ptr = idx;
         if (filename)
-          _fmemcpy(filename, dr[i].fcb_name, 11);
+          _fmemcpy(filename, dr[idx].fcb_name, 11);
         if (attr_ptr)
-          *attr_ptr = dr[i].attr;
+          *attr_ptr = dr[idx].attr;
         if (file_time_ptr)
-          *file_time_ptr = dr[i].datetime;
+          *file_time_ptr = dr[idx].datetime;
         if (file_size_ptr)
-          *file_size_ptr = dr[i].size;
+          *file_size_ptr = dr[idx].size;
         if (start_sec_ptr)
-          *start_sec_ptr = dr[i].start_sector;
+          *start_sec_ptr = dr[idx].start_sector;
+	consolef("FIND_NEXT_ENTRY OUT mask=\"%ls\" attr_mask=%02x filename=\"%ls\" attr=%02x file_time=%08lx start_sec=%04x file_size=%08lx dir_sector=%04x dir_entryno=%04x\n", mask, attr_mask, filename, *attr_ptr, *file_time_ptr, *start_sec_ptr, *file_size_ptr, *dir_sector_ptr, *dir_entryno_ptr);
         return TRUE;
       }
     }
-    if ((abs_sector = next_FAT_sector(abs_sector)) == 0xFFFF)
+    if ((abs_sector = next_FAT_sector(abs_sector)) == 0xFFFF) {
+      consolef("FIND_NEXT_ENTRY FAIL 3\n");
       return FALSE;
+    }
   }
 
+  consolef("FIND_NEXT_ENTRY FAIL 4\n");
+  return FALSE;
 }
 
 /* Generate a new directory entry, reusing a previously deleted
@@ -268,30 +295,31 @@ int find_next_entry(char far *mask, uint8_t attr_mask, char far *filename,
    allocation for the directory */
 
 int create_dir_entry(uint16_t far *dir_sector_ptr, uint8_t far *dir_entryno_ptr,
-                     char far *filename, uint8_t file_attr, uint16_t start_sector, uint32_t file_size,
-                     uint32_t file_time)
+                     char far *filename, uint8_t file_attr, uint16_t start_sector,
+		     uint32_t file_size, uint32_t file_time)
 {
   uint16_t next_sector, dir_sector = *dir_sector_ptr;
   DIRREC *dr = (DIRREC *) sector_buffer;
-  int i;
+  int idx;
 
+  consolef("CREATE DIR dir_sector=%04x dir_entryno=%02x filename=\"%ls\" file_attr=%02x start_sector=%04x file_size=%08lx file_time=%08lx\n", *dir_sector_ptr, *dir_entryno_ptr, filename, file_attr, start_sector, file_size, file_time);
   for (;;) {
     if (dir_sector != last_sector)
       if (!get_sector(dir_sector, sector_buffer))
         return FALSE;
       else
         last_sector = dir_sector;
-    for (i = 0; i < DIRREC_PER_SECTOR; i++) {
-      if (dr[i].fcb_name[0] && (dr[i].fcb_name[0] != (char) 0xE5))
+    for (idx = 0; idx < DIRREC_PER_SECTOR; idx++) {
+      if (dr[idx].fcb_name[0] && (dr[idx].fcb_name[0] != (char) 0xE5))
         continue;
-      _fmemcpy(dr[i].fcb_name, filename, 11);
-      dr[i].attr = file_attr;
-      dr[i].datetime = file_time;
-      dr[i].size = file_size;
-      dr[i].start_sector = start_sector;
+      _fmemcpy(dr[idx].fcb_name, filename, 11);
+      dr[idx].attr = file_attr;
+      dr[idx].datetime = file_time;
+      dr[idx].size = file_size;
+      dr[idx].start_sector = start_sector;
       *dir_sector_ptr = dir_sector;
       if (dir_entryno_ptr)
-        *dir_entryno_ptr = (uint8_t) i;
+        *dir_entryno_ptr = (uint8_t) idx;
       return put_sector(dir_sector, sector_buffer);
     }
     if ((next_sector = next_FAT_sector(dir_sector)) == 0xFFFF) {
@@ -312,6 +340,7 @@ void read_data(uint32_t far *file_pos_ptr, uint16_t *len_ptr, uint8_t far *buf,
   uint16_t start, rel_sector, abs_sector;
   uint16_t i, count, len = *len_ptr;
 
+  consolef("READ_DATA file_pos=%08lx len=%04x buf=%08lx start_sector=%04x last_rel=%04x last_abs=%04x\n", *file_pos_ptr, *len_ptr, buf, start_sector, *last_rel_ptr, *last_abs_ptr);
   start = (uint16_t) (*file_pos_ptr / SECTOR_SIZE);
 
   if (start < *last_rel_ptr) {
@@ -402,7 +431,8 @@ void chop_file(uint32_t file_pos, uint16_t far *start_sec_ptr, uint16_t far *las
         in XMS */
 
 void write_data(uint32_t far *file_pos_ptr, uint16_t *len_ptr, uint8_t far *buf,
-                uint16_t far *start_sec_ptr, uint16_t far *last_rel_ptr, uint16_t far *last_abs_ptr)
+                uint16_t far *start_sec_ptr, uint16_t far *last_rel_ptr,
+		uint16_t far *last_abs_ptr)
 {
   uint16_t next_sector, start, rel_sector, abs_sector;
   uint16_t i, count, len = *len_ptr;
@@ -462,3 +492,221 @@ update_sectors:
   *last_abs_ptr = abs_sector;
 }
 
+#ifndef DIRECT_DRIVE
+
+#define MAX_HANDLES 8
+
+typedef struct {
+  uint16_t index, sector;
+  uint8_t is_open:1;
+} dir_stream;
+static dir_stream dir_handles[MAX_HANDLES];
+
+typedef struct {
+  uint32_t pos, length;
+  uint16_t dir_sector, start_sector, rel_sector, abs_sector;
+  char fcb_name[DOS_FCBNAME_LEN];
+  uint8_t is_open:1;
+  uint8_t is_new:1;
+} file_stream;
+static file_stream file_handles[MAX_HANDLES];
+static uint16_t near_count;
+
+void fcbitize(char far *dest, const char far *source)
+{
+  const char far *dot, far *ext;
+  int len;
+
+
+  _fmemset(dest, ' ', 11);
+  dot = _fstrchr(source, '.');
+  if (dot)
+    ext = dot + 1;
+  else {
+    dot = source + _fstrlen(source);
+    ext = NULL;
+  }
+  len = dot - source;
+  _fmemcpy(dest, source, len <= 8 ? len : 8);
+  if (ext) {
+    len = _fstrlen(ext);
+    _fmemcpy(&dest[8], ext, len <= 3 ? len : 3);
+  }
+
+  return;
+}
+
+int ram_open(char far *path, int flags)
+{
+  uint8_t idx;
+  file_stream *fh;
+  uint16_t index, attr;
+  uint32_t size;
+  const char far *sep;
+
+
+  consolef("RAM_OPEN 1 \"%ls\"\n", path);
+  for (idx = 0; idx < MAX_HANDLES; idx++)
+    if (!file_handles[idx].is_open)
+      break;
+  if (idx == MAX_HANDLES)
+    return -1;
+
+  consolef("RAM_OPEN 2\n");
+  fh = &file_handles[idx];
+  memset(fh, 0, sizeof(*fh));
+
+  index = -1;
+  sep = _fstrrchr(path, '\\');
+  if (!sep)
+    return -1;
+  consolef("RAM_OPEN 3\n");
+  fcbitize(fh->fcb_name, sep+1);
+  
+  if (flags != O_WRONLY) {
+    consolef("RAM_OPEN 4\n");
+    fh->dir_sector = 0xffff;
+    if ((path = _fstrrchr(path, '\\')))
+      *path = 0;
+    if (!get_dir_start_sector(path, &fh->dir_sector))
+      return -1;
+    if (path)
+      *path = '\\';
+  consolef("RAM_OPEN 5\n");
+    if (!find_next_entry(fh->fcb_name, 0x27, NULL, NULL, NULL,
+			 &fh->start_sector, &fh->length, &fh->dir_sector, &index))
+      return -1;
+  }
+  else {
+  consolef("RAM_OPEN 6\n");
+    fh->start_sector = 0xffff;
+    fh->is_new = 1;
+  }
+
+  consolef("RAM_OPEN 7\n");
+  fh->rel_sector = fh->abs_sector = 0xffff;
+  fh->is_open = 1;
+  return idx;
+}
+
+int ram_close(int fd)
+{
+  file_stream *fh;
+  uint8_t index = -1;
+
+
+  if (fd < 0 || fd >= MAX_HANDLES)
+    return 0;
+
+  fh = &file_handles[fd];
+
+  dumpHex(fh, sizeof(*fh), 0);
+  if (fh->is_new) {
+    if (!create_dir_entry(&fh->dir_sector, &index, fh->fcb_name,
+                          0 /* FIXME - DOS attr */,
+			  fh->start_sector, fh->pos,
+			  0 /* FIXME - current datetime */))
+      return -1;
+  }
+
+  fh->is_open = 0;
+  return 0;
+}
+
+int ram_read(int fd, void far *buf, uint16_t count)
+{
+  file_stream *fh;
+
+
+  consolef("RAM_READ 1\n");
+  if (fd < 0 || fd >= MAX_HANDLES)
+    return 0;
+
+  consolef("RAM_READ 2\n");
+  fh = &file_handles[fd];
+
+  if (fh->pos + count > fh->length)
+    count = fh->length - fh->pos;
+
+  if (!count)
+    return count;
+  
+  near_count = count;
+  read_data(&fh->pos, &near_count, (uint8_t far *) buf,
+             fh->start_sector, &fh->rel_sector, &fh->abs_sector);
+  consolef("RAM_READ count=%04x len=%04x\n", count, near_count);
+  return near_count;
+}
+
+int ram_write(int fd, const void far *buf, uint16_t count)
+{
+  file_stream *fh;
+
+
+  if (fd < 0 || fd >= MAX_HANDLES)
+    return 0;
+
+  fh = &file_handles[fd];
+  near_count = count;
+  write_data(&fh->pos, &near_count, (uint8_t far *) buf,
+             &fh->start_sector, &fh->rel_sector, &fh->abs_sector);
+  return near_count;
+}
+
+int ram_opendir(char far *name)
+{
+  uint8_t idx;
+  dir_stream *dh;
+
+
+  consolef("RAM_OPENDIR 1\n");
+  for (idx = 0; idx < MAX_HANDLES; idx++)
+    if (!dir_handles[idx].is_open)
+      break;
+  if (idx == MAX_HANDLES)
+    return -1;
+
+  consolef("RAM_OPENDIR 2\n");
+  dh = &dir_handles[idx];
+  memset(dh, 0, sizeof(*dh));
+  if (!get_dir_start_sector(name, &dh->sector))
+    return -1;
+  
+  consolef("RAM_OPENDIR 3\n");
+  dh->index = -1;
+  dh->is_open = 1;
+  consolef("RAM_OPENDIR index=%04x handle=%i\n", dh->index, idx);
+  return idx;
+}
+
+int ram_closedir(int dirp)
+{
+  if (dirp < 0 || dirp >= MAX_HANDLES)
+    return -1;
+  if (!dir_handles[dirp].is_open)
+    return -1;
+  dir_handles[dirp].is_open = 0;
+  return 0;
+}
+
+DIRREC_PTR ram_readdir(int dirp)
+{
+  dir_stream *dh;
+  DIRREC *dr = (DIRREC *) sector_buffer;
+
+
+  if (dirp < 0 || dirp >= MAX_HANDLES)
+    return NULL;
+  dh = &dir_handles[dirp];
+  if (!dh->is_open)
+    return NULL;
+  
+  consolef("RAM_READDIR index=%04x\n", dh->index);
+  if (!find_next_entry("???????????", 0x16, NULL, NULL, NULL, NULL, NULL,
+		       &dh->sector, &dh->index))
+    return NULL;
+
+  return &dr[dh->index];
+}
+
+#endif
