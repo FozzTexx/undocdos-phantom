@@ -455,6 +455,7 @@ void read_file(void)
   read_data(&sft->pos, &r.cx, 
             sft->start_sector, &sft->rel_sector, &sft->abs_sector);
 #else
+  ram_seek(sft->file_handle, sft->pos);
   r.cx = ram_read(sft->file_handle, ((SDA_PTR_V3) sda_ptr)->current_dta, r.cx);
 #endif
 }

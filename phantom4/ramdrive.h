@@ -43,6 +43,7 @@ extern int ram_open(char far *path, int flags);
 extern int ram_close(int fd);
 extern int ram_read(int fd, void far *buf, uint16_t count);
 extern int ram_write(int fd, const void far *buf, uint16_t count);
+extern uint32_t ram_seek(int fd, uint32_t offset);
 extern int ram_opendir(char far *name);
 extern int ram_closedir(int dirp);
 extern DIRREC_PTR ram_readdir(int dirp);

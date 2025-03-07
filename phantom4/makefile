@@ -8,7 +8,7 @@ LDFLAGS = &
 	SYSTEM dos &
 	OPTION MAP
 
-CFILES  = phantom.c bios.c dosfunc.c xms.c ramdrive.c redir.c
+CFILES  = phantom.c bios.c dosfunc.c xms.c ramdrive.c redir.c debug.c
 OBJS = $(CFILES:.c=.obj) $(AFILES:.asm=.obj) ../../fujinet-rs232/sys/print.obj
 
 $(TARGET): $(OBJS)

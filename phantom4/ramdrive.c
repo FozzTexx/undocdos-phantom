@@ -545,14 +545,12 @@ int ram_open(char far *path, int flags)
   const char far *sep;
 
 
-  consolef("RAM_OPEN 1 \"%ls\"\n", path);
   for (idx = 0; idx < MAX_HANDLES; idx++)
     if (!file_handles[idx].is_open)
       break;
   if (idx == MAX_HANDLES)
     return -1;
 
-  consolef("RAM_OPEN 2\n");
   fh = &file_handles[idx];
   memset(fh, 0, sizeof(*fh));
 
@@ -560,11 +558,9 @@ int ram_open(char far *path, int flags)
   sep = _fstrrchr(path, '\\');
   if (!sep)
     return -1;
-  consolef("RAM_OPEN 3\n");
   fcbitize(fh->fcb_name, sep+1);
   
   if (flags != O_WRONLY) {
-    consolef("RAM_OPEN 4\n");
     fh->dir_sector = 0xffff;
     if ((path = _fstrrchr(path, '\\')))
       *path = 0;
@@ -572,18 +568,15 @@ int ram_open(char far *path, int flags)
       return -1;
     if (path)
       *path = '\\';
-  consolef("RAM_OPEN 5\n");
     if (!find_next_entry(fh->fcb_name, 0x27, NULL, NULL, NULL,
 			 &fh->start_sector, &fh->length, &fh->dir_sector, &index))
       return -1;
   }
   else {
-  consolef("RAM_OPEN 6\n");
     fh->start_sector = 0xffff;
     fh->is_new = 1;
   }
 
-  consolef("RAM_OPEN 7\n");
   fh->rel_sector = fh->abs_sector = 0xffff;
   fh->is_open = 1;
   return idx;
@@ -596,9 +589,11 @@ int ram_close(int fd)
 
 
   if (fd < 0 || fd >= MAX_HANDLES)
-    return 0;
+    return -1;
 
   fh = &file_handles[fd];
+  if (!fh->is_open)
+    return -1;
 
   dumpHex(fh, sizeof(*fh), 0);
   if (fh->is_new) {
@@ -618,12 +613,12 @@ int ram_read(int fd, void far *buf, uint16_t count)
   file_stream *fh;
 
 
-  consolef("RAM_READ 1\n");
   if (fd < 0 || fd >= MAX_HANDLES)
     return 0;
 
-  consolef("RAM_READ 2\n");
   fh = &file_handles[fd];
+  if (!fh->is_open)
+    return 0;
 
   if (fh->pos + count > fh->length)
     count = fh->length - fh->pos;
@@ -634,7 +629,6 @@ int ram_read(int fd, void far *buf, uint16_t count)
   near_count = count;
   read_data(&fh->pos, &near_count, (uint8_t far *) buf,
              fh->start_sector, &fh->rel_sector, &fh->abs_sector);
-  consolef("RAM_READ count=%04x len=%04x\n", count, near_count);
   return near_count;
 }
 
@@ -647,10 +641,29 @@ int ram_write(int fd, const void far *buf, uint16_t count)
     return 0;
 
   fh = &file_handles[fd];
+  if (!fh->is_open)
+    return 0;
+
   near_count = count;
   write_data(&fh->pos, &near_count, (uint8_t far *) buf,
              &fh->start_sector, &fh->rel_sector, &fh->abs_sector);
   return near_count;
+}
+
+uint32_t ram_seek(int fd, uint32_t offset)
+{
+  file_stream *fh;
+
+
+  if (fd < 0 || fd >= MAX_HANDLES)
+    return -1;
+
+  fh = &file_handles[fd];
+  if (!fh->is_open)
+    return -1;
+
+  fh->pos = offset;
+  return fh->pos;
 }
 
 int ram_opendir(char far *name)
@@ -659,23 +672,19 @@ int ram_opendir(char far *name)
   dir_stream *dh;
 
 
-  consolef("RAM_OPENDIR 1\n");
   for (idx = 0; idx < MAX_HANDLES; idx++)
     if (!dir_handles[idx].is_open)
       break;
   if (idx == MAX_HANDLES)
     return -1;
 
-  consolef("RAM_OPENDIR 2\n");
   dh = &dir_handles[idx];
   memset(dh, 0, sizeof(*dh));
   if (!get_dir_start_sector(name, &dh->sector))
     return -1;
   
-  consolef("RAM_OPENDIR 3\n");
   dh->index = -1;
   dh->is_open = 1;
-  consolef("RAM_OPENDIR index=%04x handle=%i\n", dh->index, idx);
   return idx;
 }
 
@@ -701,7 +710,6 @@ DIRREC_PTR ram_readdir(int dirp)
   if (!dh->is_open)
     return NULL;
   
-  consolef("RAM_READDIR index=%04x\n", dh->index);
   if (!find_next_entry("???????????", 0x16, NULL, NULL, NULL, NULL, NULL,
 		       &dh->sector, &dh->index))
     return NULL;
