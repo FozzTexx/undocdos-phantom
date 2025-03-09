@@ -47,6 +47,7 @@ extern uint32_t ram_seek(int fd, uint32_t offset);
 extern int ram_opendir(char far *name);
 extern int ram_closedir(int dirp);
 extern DIRREC_PTR ram_readdir(int dirp);
+extern int ram_mkdir(char far *path);
 #endif
 
 #endif /* _RAMDRIVE_H */

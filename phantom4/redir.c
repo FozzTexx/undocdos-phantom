@@ -150,7 +150,7 @@ void find_next(void)
 	       && (!(srchrec_ptr1->attr_mask & ATTR_HIDDEN)))))) {
       if (dirrec_ptr1->fcb_name)
 	_fmemcpy(dirrec_ptr1->fcb_name, dr->fcb_name, 11);
-      srchrec_ptr1->attr_mask = dr->attr;
+      srchrec_ptr1->attr_mask = dirrec_ptr1->attr = dr->attr;
       dirrec_ptr1->datetime = dr->datetime;
       dirrec_ptr1->size = dr->size;
       dirrec_ptr1->start_sector = dr->start_sector;
@@ -304,6 +304,7 @@ void rename_dir(void)
   FREE_SECTOR_CHAIN(dirrec_ptr1->start_sector);
   succeed();
 #else
+  consolef("RENAME_DIR \"%ls\"\n", filename_ptr1);
   fail(DOSERR_ACCESS_DENIED);
   return;
 #endif
@@ -325,14 +326,14 @@ void make_dir(void)
 
   *srch_attr_ptr = 0x3f;
   find_first();
-  if (r.ax == DOSERR_NONE)        // we need error 2 here
-    {
-      fail(DOSERR_ACCESS_DENIED);
-      return;
-    }
+  if (r.ax == DOSERR_NONE) {        // we need error 2 here
+    fail(DOSERR_FILE_EXISTS);
+    return;
+  }
   if (r.ax != DOSERR_FILE_NOT_FOUND)
     return;
 
+#ifdef DIRECT_DRIVE
   /*
     Note that although we initialize a directory sector, we actually
     needn't, since we do not create . or .. entries. This is because
@@ -342,7 +343,6 @@ void make_dir(void)
     after put_sectors. Note that you will also have to take account
     of them in RMDIR.
   */
-#ifdef DIRECT_DRIVE
   last_sector = 0xffff;
   memset(sector_buffer, 0, SECTOR_SIZE);
   if (!(dirrec_ptr1->start_sector = next_free_sector())) {
@@ -359,8 +359,11 @@ void make_dir(void)
   }
   succeed();
 #else
-  fail(DOSERR_ACCESS_DENIED);
-  return;
+  if (ram_mkdir(filename_ptr1) < 0) {
+    fail(DOSERR_ACCESS_DENIED);
+    return;
+  }
+  succeed();
 #endif
 }
 
@@ -376,6 +379,7 @@ void chdir(void)
 
     *srch_attr_ptr = 0x10;
     find_first();
+    dumpHex(dirrec_ptr1, sizeof(*dirrec_ptr1), 0);
     if (r.ax || (!(dirrec_ptr1->attr & 0x10))) {
       fail(DOSERR_PATH_NOT_FOUND);
       return;
@@ -455,8 +459,13 @@ void read_file(void)
   read_data(&sft->pos, &r.cx, 
             sft->start_sector, &sft->rel_sector, &sft->abs_sector);
 #else
-  ram_seek(sft->file_handle, sft->pos);
+  consolef("READ POS IN %li %li\n", sft->pos, sft->last_pos);
+  if (sft->pos != sft->last_pos)
+    ram_seek(sft->file_handle, sft->pos);
   r.cx = ram_read(sft->file_handle, ((SDA_PTR_V3) sda_ptr)->current_dta, r.cx);
+  sft->pos += r.cx;
+  sft->last_pos = sft->pos;
+  consolef("READ POS OUT %li %li\n", sft->pos, sft->last_pos);
 #endif
 }
 
@@ -599,6 +608,7 @@ void set_attr()
     return;
   }
 #else
+  consolef("SET_ATTR \"%ls\"\n", filename_ptr1);
   fail(DOSERR_ACCESS_DENIED);
   return;
 #endif
@@ -678,6 +688,7 @@ void rename_file(void)
         }
       }
 #else
+      consolef("RENAME_FILE \"%ls\"\n", filename_ptr1);
       fail(DOSERR_ACCESS_DENIED);
       return;
 #endif
@@ -715,6 +726,7 @@ void delete_file(void)
         return;
       }
 #else
+      consolef("DELETE_FILE \"%ls\"\n", filename_ptr1);
       fail(DOSERR_ACCESS_DENIED);
       return;
 #endif
@@ -750,8 +762,12 @@ void init_sft(SFTREC_PTR sft)
   /* Mark file as being on network drive, unwritten to */
   sft->dev_info_word = (uint16_t) (0x8040 | (uint16_t) our_drive_no);
   sft->pos = 0;
+#ifdef DIRECT_DRIVE
   sft->rel_sector = 0xffff;
   sft->abs_sector = 0xffff;
+#else
+  sft->last_pos = sft->pos;
+#endif
   sft->dev_drvr_ptr = NULL;
 
   if (sft->open_mode & 0x8000)

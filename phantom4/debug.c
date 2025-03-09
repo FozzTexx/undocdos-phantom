@@ -9,6 +9,12 @@ void dumpSFT(SFTREC_PTR sft)
 #else
 	   sft->file_handle,
 #endif
-	   sft->time, sft->date, sft->size, sft->pos, sft->rel_sector, sft->abs_sector, sft->dir_sector, sft->index, sft->fcb_name);
+	   sft->time, sft->date, sft->size, sft->pos,
+#ifdef DIRECT_DRIVE
+	   sft->rel_sector, sft->abs_sector,
+#else
+	   (uint16_t) (sft->last_pos & 0xffff), (uint16_t) (sft->last_pos >> 16),
+#endif
+	   sft->dir_sector, sft->index, sft->fcb_name);
   return;
 }

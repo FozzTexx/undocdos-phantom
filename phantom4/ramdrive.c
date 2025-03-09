@@ -511,6 +511,7 @@ typedef struct {
 } file_stream;
 static file_stream file_handles[MAX_HANDLES];
 static uint16_t near_count;
+static char temp_fcb[DOS_FCBNAME_LEN];
 
 void fcbitize(char far *dest, const char far *source)
 {
@@ -710,11 +711,46 @@ DIRREC_PTR ram_readdir(int dirp)
   if (!dh->is_open)
     return NULL;
   
-  if (!find_next_entry("???????????", 0x16, NULL, NULL, NULL, NULL, NULL,
+  if (!find_next_entry("???????????", 0x3F, NULL, NULL, NULL, NULL, NULL,
 		       &dh->sector, &dh->index))
     return NULL;
 
   return &dr[dh->index];
+}
+
+int ram_mkdir(char far *path)
+{
+  uint16_t start_sector, dir_sector = 0;
+  char far *sep;
+
+
+  /*
+    Note that although we initialize a directory sector, we actually
+    needn't, since we do not create . or .. entries. This is because
+    a redirector never receives requests for . or .. in ChDir - the
+    absolute path is resolved by DOS before we get it. If you want
+    to see dots in DIR listings, create directory entries for them
+    after put_sectors. Note that you will also have to take account
+    of them in RMDIR.
+  */
+  last_sector = 0xffff;
+  memset(sector_buffer, 0, SECTOR_SIZE);
+  if (!(start_sector = next_free_sector()))
+    return -1;
+
+  set_next_sector(start_sector, 0xFFFF);
+  last_sector = start_sector;
+  if ((sep = _fstrrchr(path, '\\')))
+    sep++;
+  else
+    sep = path;
+  fcbitize(temp_fcb, sep);
+  if ((!put_sector(start_sector, sector_buffer)) ||
+      (!create_dir_entry(&dir_sector, NULL, temp_fcb, 0x10,
+                         start_sector, 0, dos_ftime())))
+    return -1;
+
+  return 0;
 }
 
 #endif
