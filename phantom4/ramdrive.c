@@ -543,7 +543,8 @@ int ram_open(char far *path, int flags)
   file_stream *fh;
   uint16_t index, attr;
   uint32_t size;
-  const char far *sep;
+  char far *sep;
+  int success;
 
 
   for (idx = 0; idx < MAX_HANDLES; idx++)
@@ -563,12 +564,13 @@ int ram_open(char far *path, int flags)
   
   if (flags != O_WRONLY) {
     fh->dir_sector = 0xffff;
-    if ((path = _fstrrchr(path, '\\')))
-      *path = 0;
-    if (!get_dir_start_sector(path, &fh->dir_sector))
+    if ((sep = _fstrrchr(path, '\\')))
+      *sep = 0;
+    success = get_dir_start_sector(path, &fh->dir_sector);
+    if (sep)
+      *sep = '\\';
+    if (!success)
       return -1;
-    if (path)
-      *path = '\\';
     if (!find_next_entry(fh->fcb_name, 0x27, NULL, NULL, NULL,
 			 &fh->start_sector, &fh->length, &fh->dir_sector, &index))
       return -1;
@@ -750,6 +752,37 @@ int ram_mkdir(char far *path)
                          start_sector, 0, dos_ftime())))
     return -1;
 
+  return 0;
+}
+
+int ram_stat(char far *path, DIRREC_PTR dirrec)
+{
+  uint16_t dir_sector = -1;
+  uint16_t index = -1;
+  int success;
+  char far *sep;
+
+
+  if ((sep = _fstrrchr(path, '\\')))
+    *sep = 0;
+  success = get_dir_start_sector(path, &dir_sector);
+  if (sep)
+    *sep = '\\';
+  if (!success)
+    return -1;
+
+  if (sep)
+    sep++;
+  else
+    sep = path;
+  fcbitize(temp_fcb, sep);
+  
+  index = -1;
+  success = find_next_entry(temp_fcb, 0x3F, dirrec->fcb_name, &dirrec->attr,
+			    NULL, NULL, NULL, &dir_sector, &index);
+  consolef("RAM_STAT %i \"%ls\"\n", success, path);
+  if (!success)
+    return -1;
   return 0;
 }
 

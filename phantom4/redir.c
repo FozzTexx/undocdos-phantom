@@ -110,7 +110,6 @@ void find_next(void)
   char far *path;
 
 
-  // FIXME - need to call ram_opendir
   consolef("FIND_NEXT dir_handle=%i\n", srchrec_ptr1->dir_handle);
 
   if (srchrec_ptr1->dir_handle == -1) {
@@ -160,18 +159,16 @@ void find_next(void)
 #endif
 }
 
+#ifdef DIRECT_DRIVE
 /* Internal find_next for delete and rename processing */
 uint16_t fnext2(void)
 {
-#ifdef DIRECT_DRIVE
   return (find_next_entry(srchrec_ptr2->pattern, 0x20,
                           dirrec_ptr2->fcb_name, &dirrec_ptr2->attr,
                           NULL, NULL, NULL, &srchrec_ptr2->dir_sector,
                           &srchrec_ptr2->index)) ? 0 : 18;
-#else
-  return 0;
-#endif
 }
+#endif
 
 /* Find_First - subfunction 1Bh */
 
@@ -236,21 +233,19 @@ void find_first(void)
     r.ax = DOSERR_FILE_NOT_FOUND;   // make find_next error code suitable to find_first
 }
 
+#ifdef DIRECT_DRIVE
 /* Internal find_first for delete and rename processing */
 uint16_t ffirst2(void)
 {
-#ifdef DIRECT_DRIVE
   if (!get_dir_start_sector(filename_ptr2, &srchrec_ptr2->dir_sector))
     return DOSERR_PATH_NOT_FOUND;
-#else
-  return DOSERR_PATH_NOT_FOUND;
-#endif
 
   srchrec_ptr2->index = -1;
   srchrec_ptr2->drive_num = (uint8_t) (our_drive_no | 0x80);
 
   return fnext2();
 }
+#endif
 
 /* ReMove Directory - subfunction 01h */
 void rename_dir(void)
@@ -267,6 +262,7 @@ void rename_dir(void)
   _fstrcpy(filename_ptr2, filename_ptr1);
   *srch_attr_ptr = 0x10;
 
+  // FIXME - replace with ram_stat()
   find_first();
   if (r.ax || (!(dirrec_ptr1->attr & 0x10))) {
     r.ax = DOSERR_PATH_NOT_FOUND;
@@ -281,6 +277,7 @@ void rename_dir(void)
   _fmemset(srchrec_ptr2->pattern, '?', DOS_FCBNAME_LEN);
   srchrec_ptr2->attr_mask = 0x3f;
 
+#ifdef DIRECT_DRIVE
   if ((r.ax = ffirst2()) == DOSERR_PATH_NOT_FOUND) {
     fail(DOSERR_PATH_NOT_FOUND);
     return;
@@ -290,6 +287,17 @@ void rename_dir(void)
     fail(DOSERR_ACCESS_DENIED);
     return;
   }
+#else
+  if (ram_stat(filename_ptr2, dirrec_ptr2)) {
+    fail(DOSERR_PATH_NOT_FOUND);
+    return;
+  }
+
+  if (!(dirrec_ptr2->attr & ATTR_DIRECTORY)) {
+    fail(DOSERR_ACCESS_DENIED);
+    return;
+  }
+#endif
 
 #ifdef DIRECT_DRIVE
   if (!get_sector(last_sector = srchrec_ptr1->dir_sector, sector_buffer)) {
@@ -297,13 +305,15 @@ void rename_dir(void)
     return;
   }
   ((DIRREC_PTR) sector_buffer)[srchrec_ptr1->index].fcb_name[0] = (char) 0xE5;
-  if (!put_sectorlast_sector, sector_buffer))) {
+  if (!put_sector(last_sector, sector_buffer)) {
     fail(DOSERR_ACCESS_DENIED);
     return;
   }
+
   FREE_SECTOR_CHAIN(dirrec_ptr1->start_sector);
   succeed();
 #else
+#warning rename_dir() not implemented
   consolef("RENAME_DIR \"%ls\"\n", filename_ptr1);
   fail(DOSERR_ACCESS_DENIED);
   return;
@@ -324,6 +334,7 @@ void make_dir(void)
     return;
   }
 
+#ifdef DIRECT_DRIVE
   *srch_attr_ptr = 0x3f;
   find_first();
   if (r.ax == DOSERR_NONE) {        // we need error 2 here
@@ -332,6 +343,12 @@ void make_dir(void)
   }
   if (r.ax != DOSERR_FILE_NOT_FOUND)
     return;
+#else
+  if (ram_stat(filename_ptr1, dirrec_ptr1)) {
+    fail(DOSERR_FILE_EXISTS);
+    return;
+  }
+#endif
 
 #ifdef DIRECT_DRIVE
   /*
@@ -377,13 +394,19 @@ void chdir(void)
       return;
     }
 
+#ifdef DIRECT_DRIVE
     *srch_attr_ptr = 0x10;
     find_first();
-    dumpHex(dirrec_ptr1, sizeof(*dirrec_ptr1), 0);
-    if (r.ax || (!(dirrec_ptr1->attr & 0x10))) {
+    if (r.ax || (!(dirrec_ptr1->attr & ATTR_DIRECTORY))) {
       fail(DOSERR_PATH_NOT_FOUND);
       return;
     }
+#else
+  if (ram_stat(filename_ptr1, dirrec_ptr1) || !(dirrec_ptr1->attr & ATTR_DIRECTORY)) {
+    fail(DOSERR_ACCESS_DENIED);
+    return;
+  }
+#endif
   }
   _fstrcpy(current_path, filename_ptr1);
 }
@@ -459,13 +482,11 @@ void read_file(void)
   read_data(&sft->pos, &r.cx, 
             sft->start_sector, &sft->rel_sector, &sft->abs_sector);
 #else
-  consolef("READ POS IN %li %li\n", sft->pos, sft->last_pos);
   if (sft->pos != sft->last_pos)
-    ram_seek(sft->file_handle, sft->pos);
+    ram_seek(sft->file_handle, sft->pos); // FIXME - check error
   r.cx = ram_read(sft->file_handle, ((SDA_PTR_V3) sda_ptr)->current_dta, r.cx);
   sft->pos += r.cx;
   sft->last_pos = sft->pos;
-  consolef("READ POS OUT %li %li\n", sft->pos, sft->last_pos);
 #endif
 }
 
@@ -495,8 +516,11 @@ void write_file(void)
   write_data(&sft->pos, &r.cx, ((SDA_PTR_V3) sda_ptr)->current_dta,
              &sft->start_sector, &sft->rel_sector, &sft->abs_sector);
 #else
+  if (sft->pos != sft->last_pos)
+    ram_seek(sft->file_handle, sft->pos); // FIXME - check error
   r.cx = ram_write(sft->file_handle, ((SDA_PTR_V3) sda_ptr)->current_dta, r.cx);
   sft->pos += r.cx;
+  sft->last_pos = sft->pos;
 #endif
   if (sft->pos > sft->size)
     sft->size = sft->pos;
@@ -566,6 +590,7 @@ void disk_space(void)
   r.bx = total_sectors;
   r.dx = free_sectors;
 #else
+#warning disk_space() not implemented
   r.bx = 0;
   r.dx = 0;
 #endif
@@ -580,10 +605,17 @@ void get_attr(void)
     return;
   }
 
+#ifdef DIRECT_DRIVE
   *srch_attr_ptr = 0x3f;
   find_first();
   if (r.ax)
     return;
+#else
+  if (ram_stat(filename_ptr1, dirrec_ptr1)) {
+    fail(DOSERR_FILE_NOT_FOUND);
+    return;
+  }
+#endif
 
   r.ax = (uint16_t) dirrec_ptr1->attr;
 }
@@ -608,6 +640,7 @@ void set_attr()
     return;
   }
 #else
+#warning set_attr() not implemented
   consolef("SET_ATTR \"%ls\"\n", filename_ptr1);
   fail(DOSERR_ACCESS_DENIED);
   return;
@@ -626,6 +659,7 @@ void rename_file(void)
 
   *srch_attr_ptr = 0x21;
   srchrec_ptr2->attr_mask = 0x3f;
+#ifdef DIRECT_DRIVE
   find_first();
   if (r.ax)
     return;
@@ -657,12 +691,25 @@ void rename_file(void)
     fail(DOSERR_ACCESS_DENIED);
     return;
   }
+#else
+  if (ram_stat(filename_ptr2, dirrec_ptr2)) {
+    fail(DOSERR_PATH_NOT_FOUND);
+    return;
+  }
+
+  if ((dirrec_ptr2->attr & (ATTR_READ_ONLY | ATTR_VOLUME_LABEL
+			    | ATTR_DIRECTORY | ATTR_DEVICE))) {
+    fail(DOSERR_ACCESS_DENIED);
+    return;
+  }
+#endif
 
   ret = DOSERR_NONE;
 #ifdef DIRECT_DRIVE
   dir_sector = srchrec_ptr2->dir_sector;
 #endif
 
+#ifdef DIRECT_DRIVE
   while (!r.ax) {
     for (i = 0; i < DOS_FCBNAME_LEN; i++)
       srchrec_ptr2->pattern[i] = (fcbname_ptr2[i] == '?')
@@ -671,7 +718,6 @@ void rename_file(void)
     if ((dirrec_ptr1->attr & 1) || (!ffirst2()))
       ret = DOSERR_ACCESS_DENIED;
     else {
-#ifdef DIRECT_DRIVE
       if (!create_dir_entry(&dir_sector, NULL, srchrec_ptr2->pattern,
                             dirrec_ptr1->attr, dirrec_ptr1->start_sector,
                             dirrec_ptr1->size, dirrec_ptr1->datetime))
@@ -687,11 +733,6 @@ void rename_file(void)
           return;
         }
       }
-#else
-      consolef("RENAME_FILE \"%ls\"\n", filename_ptr1);
-      fail(DOSERR_ACCESS_DENIED);
-      return;
-#endif
     }
     find_next();
   }
@@ -703,6 +744,12 @@ void rename_file(void)
     succeed();
   else
     fail(r.ax);
+#else
+#warning rename_file() not implemented
+  consolef("RENAME_FILE \"%ls\"\n", filename_ptr1);
+  fail(DOSERR_ACCESS_DENIED);
+  return;
+#endif
 }
 
 /* Delete File - subfunction 13h */
@@ -710,26 +757,21 @@ void delete_file(void)
 {
   uint16_t ret = DOSERR_NONE;
 
+#ifdef DIRECT_DRIVE
   *srch_attr_ptr = 0x21;
+  // FIXME - replace with ram_stat()
   find_first();
 
   while (!r.ax) {
     if (dirrec_ptr1->attr & 1)
       ret = DOSERR_ACCESS_DENIED;
     else {
-#ifdef DIRECT_DRIVE
       FREE_SECTOR_CHAIN(dirrec_ptr1->start_sector);
       ((DIRREC_PTR) sector_buffer)[srchrec_ptr1->index].fcb_name[0] = (char) 0xE5;
-      if (      /* dirsector_has_entries(last_sector, sector_buffer) && */
-           (!put_sector(last_sector, sector_buffer))) {
+      if (!put_sector(last_sector, sector_buffer)) {
         fail(DOSERR_ACCESS_DENIED);
         return;
       }
-#else
-      consolef("DELETE_FILE \"%ls\"\n", filename_ptr1);
-      fail(DOSERR_ACCESS_DENIED);
-      return;
-#endif
     }
     find_next();
   }
@@ -741,6 +783,12 @@ void delete_file(void)
     succeed();
   else
     fail(r.ax);
+#else
+#warning delete_file() not implemnted
+  consolef("DELETE_FILE \"%ls\"\n", filename_ptr1);
+  fail(DOSERR_ACCESS_DENIED);
+  return;
+#endif
 }
 
 /* Support functions for the various file open functions below */
@@ -820,6 +868,8 @@ void open_existing(void)
 {
   SFTREC_PTR sft;
 
+  // FIXME - make open_existing, open_extended, open_new all use same routine
+  
   /* locate any file for any open */
 
   sft = (SFTREC_PTR) MK_FP(r.es, r.di);
@@ -830,8 +880,12 @@ void open_existing(void)
     return;
   }
 
+#ifdef DIRECT_DRIVE
   *srch_attr_ptr = 0x27;
   find_first();
+#else
+  r.ax = ram_stat(filename_ptr1, dirrec_ptr1);
+#endif
   if (!r.ax) {
     int fd;
 
@@ -854,15 +908,22 @@ void open_new(void)
 {
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
 
+  // FIXME - make open_existing, open_extended, open_new all use same routine
+
   if (contains_wildcards(fcbname_ptr1)) {
     fail(DOSERR_PATH_NOT_FOUND);
     return;
   }
 
+#ifdef DIRECT_DRIVE
   *srch_attr_ptr = 0x3f;
   find_first();
   if ((r.flags & FCARRY) && (r.ax != DOSERR_FILE_NOT_FOUND))
     return;
+#else
+  r.ax = ram_stat(filename_ptr1, dirrec_ptr1);
+  // FIXME - what about truncate of existing file?
+#endif
 
   if ((!r.ax) && (dirrec_ptr1->attr & 0x19)) {
     fail(DOSERR_ACCESS_DENIED);
@@ -925,6 +986,8 @@ void open_extended(void)
   SFTREC_PTR sft = (SFTREC_PTR) MK_FP(r.es, r.di);
   uint16_t open_mode, action;
 
+  // FIXME - make open_existing, open_extended, open_new all use same routine
+
   open_mode = ((SDA_PTR_V4) sda_ptr)->mode_2E & 0x7f;
   action = ((SDA_PTR_V4) sda_ptr)->action_2E;
   sft->open_mode = open_mode;
@@ -935,10 +998,16 @@ void open_extended(void)
     return;
   }
 
+#ifdef DIRECT_DRIVE
   *srch_attr_ptr = 0x3f;
+  // FIXME - replace with ram_stat()
   find_first();
   if ((r.flags & FCARRY) && (r.ax != DOSERR_FILE_NOT_FOUND))
     return;
+#else
+  r.ax = ram_stat(filename_ptr1, dirrec_ptr1);
+  // FIXME - what about truncate of existing file?
+#endif
 
   if (!r.ax) {
     if ((dirrec_ptr1->attr & 0x18) ||
