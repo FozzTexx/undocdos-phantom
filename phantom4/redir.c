@@ -136,19 +136,19 @@ void find_next(void)
 
     dumpHex(dr, sizeof(*dr), 0);
     if (match_to_mask(srchrec_ptr1->pattern, dr->fcb_name) &&
-	(!(
-	   ((srchrec_ptr1->attr_mask == ATTR_VOLUME_LABEL)
-	    && (!(dr->attr & ATTR_VOLUME_LABEL)))
-	   || ((dr->attr & ATTR_DIRECTORY)
-	       && (!(srchrec_ptr1->attr_mask & ATTR_DIRECTORY)))
-	   || ((dr->attr & ATTR_VOLUME_LABEL)
-	       && (!(srchrec_ptr1->attr_mask & ATTR_VOLUME_LABEL)))
-	   || ((dr->attr & ATTR_SYSTEM)
-	       && (!(srchrec_ptr1->attr_mask & ATTR_SYSTEM)))
-	   || ((dr->attr & ATTR_HIDDEN)
-	       && (!(srchrec_ptr1->attr_mask & ATTR_HIDDEN)))))) {
+        (!(
+           ((srchrec_ptr1->attr_mask == ATTR_VOLUME_LABEL)
+            && (!(dr->attr & ATTR_VOLUME_LABEL)))
+           || ((dr->attr & ATTR_DIRECTORY)
+               && (!(srchrec_ptr1->attr_mask & ATTR_DIRECTORY)))
+           || ((dr->attr & ATTR_VOLUME_LABEL)
+               && (!(srchrec_ptr1->attr_mask & ATTR_VOLUME_LABEL)))
+           || ((dr->attr & ATTR_SYSTEM)
+               && (!(srchrec_ptr1->attr_mask & ATTR_SYSTEM)))
+           || ((dr->attr & ATTR_HIDDEN)
+               && (!(srchrec_ptr1->attr_mask & ATTR_HIDDEN)))))) {
       if (dirrec_ptr1->fcb_name)
-	_fmemcpy(dirrec_ptr1->fcb_name, dr->fcb_name, 11);
+        _fmemcpy(dirrec_ptr1->fcb_name, dr->fcb_name, DOS_FCBNAME_LEN);
       srchrec_ptr1->attr_mask = dirrec_ptr1->attr = dr->attr;
       dirrec_ptr1->datetime = dr->datetime;
       dirrec_ptr1->size = dr->size;
@@ -248,7 +248,7 @@ uint16_t ffirst2(void)
 #endif
 
 /* ReMove Directory - subfunction 01h */
-void rename_dir(void)
+void remove_dir(void)
 {
   /* special case for root */
   if ((*filename_ptr1 == '\\') && (!*(filename_ptr1 + 1))) {
@@ -262,7 +262,7 @@ void rename_dir(void)
   _fstrcpy(filename_ptr2, filename_ptr1);
   *srch_attr_ptr = 0x10;
 
-  // FIXME - replace with ram_stat()
+#ifdef DIRECT_DRIVE
   find_first();
   if (r.ax || (!(dirrec_ptr1->attr & 0x10))) {
     r.ax = DOSERR_PATH_NOT_FOUND;
@@ -277,7 +277,6 @@ void rename_dir(void)
   _fmemset(srchrec_ptr2->pattern, '?', DOS_FCBNAME_LEN);
   srchrec_ptr2->attr_mask = 0x3f;
 
-#ifdef DIRECT_DRIVE
   if ((r.ax = ffirst2()) == DOSERR_PATH_NOT_FOUND) {
     fail(DOSERR_PATH_NOT_FOUND);
     return;
@@ -297,6 +296,8 @@ void rename_dir(void)
     fail(DOSERR_ACCESS_DENIED);
     return;
   }
+
+  // FIXME - make sure this isn't current directory
 #endif
 
 #ifdef DIRECT_DRIVE
@@ -311,13 +312,15 @@ void rename_dir(void)
   }
 
   FREE_SECTOR_CHAIN(dirrec_ptr1->start_sector);
-  succeed();
 #else
-#warning rename_dir() not implemented
-  consolef("RENAME_DIR \"%ls\"\n", filename_ptr1);
-  fail(DOSERR_ACCESS_DENIED);
-  return;
+  if (ram_rmdir(filename_ptr1)) {
+    consolef("RMDIR FAIL\n");
+    fail(DOSERR_ACCESS_DENIED);
+    return;
+  }
 #endif
+  consolef("REMOVE_DIR SUCCESS\n");
+  succeed();
 }
 
 /* Make Directory - subfunction 03h */
@@ -344,7 +347,7 @@ void make_dir(void)
   if (r.ax != DOSERR_FILE_NOT_FOUND)
     return;
 #else
-  if (ram_stat(filename_ptr1, dirrec_ptr1)) {
+  if (!ram_stat(filename_ptr1, dirrec_ptr1)) {
     fail(DOSERR_FILE_EXISTS);
     return;
   }
@@ -647,19 +650,44 @@ void set_attr()
 #endif
 }
 
+void fcb_to_path(char far *path, char far *fcbname)
+{
+  char far *sep, far *space;
+
+
+  if ((sep = _fstrrchr(path, '\\')))
+    sep++;
+  else
+    sep = path;
+
+  _fmemmove(sep, fcbname, 8);
+  sep[8] = 0;
+
+  if (fcbname[0] != ' ') {
+    if (!(space = _fstrchr(sep, ' ')))
+      space = sep + 8;
+    *space++ = '.';
+    _fmemmove(space, &fcbname[8], 3);
+    space[3] = 0;
+    if ((space = _fstrchr(space, ' ')))
+      *space = 0;
+  }
+
+  return;
+}
+
 /* Rename File - subfunction 11h */
 void rename_file(void)
 {
   char far *path;
+  int i = 0, j;
   uint16_t ret = DOSERR_NONE;
 #ifdef DIRECT_DRIVE
   uint16_t dir_sector;
 #endif
-  int i = 0, j;
 
   *srch_attr_ptr = 0x21;
   srchrec_ptr2->attr_mask = 0x3f;
-#ifdef DIRECT_DRIVE
   find_first();
   if (r.ax)
     return;
@@ -667,7 +695,7 @@ void rename_file(void)
   if (path = _fstrrchr(filename_ptr2, '\\'))
     *path++ = 0;
 
-  /* Keep the new name mask in fcbname_ptr2 */
+  /* Keep the new name pattern in fcbname_ptr2 */
   _fmemset(fcbname_ptr2, ' ', DOS_FCBNAME_LEN);
   for (; *path; path++)
     switch (*path) {
@@ -683,7 +711,8 @@ void rename_file(void)
       fcbname_ptr2[i++] = *path;
     }
   _fmemcpy(srchrec_ptr2->pattern, fcbname_ptr2, DOS_FCBNAME_LEN);
-  if ((ret = ffirst2()) == 3) {
+#ifdef DIRECT_DRIVE
+  if ((ret = ffirst2()) == DOSERR_PATH_NOT_FOUND) {
     fail(DOSERR_PATH_NOT_FOUND);
     return;
   }
@@ -692,16 +721,8 @@ void rename_file(void)
     return;
   }
 #else
-  if (ram_stat(filename_ptr2, dirrec_ptr2)) {
-    fail(DOSERR_PATH_NOT_FOUND);
-    return;
-  }
-
-  if ((dirrec_ptr2->attr & (ATTR_READ_ONLY | ATTR_VOLUME_LABEL
-			    | ATTR_DIRECTORY | ATTR_DEVICE))) {
-    fail(DOSERR_ACCESS_DENIED);
-    return;
-  }
+  // FIXME - make sure filename_ptr2 points to valid directory? Not
+  //         sure what ffirst2() is doing above
 #endif
 
   ret = DOSERR_NONE;
@@ -709,15 +730,26 @@ void rename_file(void)
   dir_sector = srchrec_ptr2->dir_sector;
 #endif
 
-#ifdef DIRECT_DRIVE
+  /* DOS makes our function handle all the wildcards instead of doing
+     it itself. Wildcards are allowed on both on the source and the
+     destination. We have to loop through all the entries in a
+     directory. */
   while (!r.ax) {
     for (i = 0; i < DOS_FCBNAME_LEN; i++)
       srchrec_ptr2->pattern[i] = (fcbname_ptr2[i] == '?')
         ? dirrec_ptr1->fcb_name[i]
         : fcbname_ptr2[i];
-    if ((dirrec_ptr1->attr & 1) || (!ffirst2()))
+    if (dirrec_ptr1->attr & ATTR_READ_ONLY)
       ret = DOSERR_ACCESS_DENIED;
+#ifdef DIRECT_DRIVE
+    else if (!ffirst2())
+      ret = DOSERR_ACCESS_DENIED;
+#else
+    // FIXME - make sure filename_ptr2 points to valid directory? Not
+    //         sure what ffirst2() is doing above
+#endif
     else {
+#ifdef DIRECT_DRIVE
       if (!create_dir_entry(&dir_sector, NULL, srchrec_ptr2->pattern,
                             dirrec_ptr1->attr, dirrec_ptr1->start_sector,
                             dirrec_ptr1->size, dirrec_ptr1->datetime))
@@ -733,6 +765,15 @@ void rename_file(void)
           return;
         }
       }
+#else
+      _fstrcpy(filename_ptr2, filename_ptr1);
+      fcb_to_path(filename_ptr1, dirrec_ptr1->fcb_name);
+      fcb_to_path(filename_ptr2, srchrec_ptr2->pattern);
+      if (ram_rename(filename_ptr1, filename_ptr2)) {
+        fail(DOSERR_ACCESS_DENIED);
+        return;
+      }
+#endif
     }
     find_next();
   }
@@ -744,12 +785,6 @@ void rename_file(void)
     succeed();
   else
     fail(r.ax);
-#else
-#warning rename_file() not implemented
-  consolef("RENAME_FILE \"%ls\"\n", filename_ptr1);
-  fail(DOSERR_ACCESS_DENIED);
-  return;
-#endif
 }
 
 /* Delete File - subfunction 13h */
@@ -759,7 +794,6 @@ void delete_file(void)
 
 #ifdef DIRECT_DRIVE
   *srch_attr_ptr = 0x21;
-  // FIXME - replace with ram_stat()
   find_first();
 
   while (!r.ax) {
@@ -784,7 +818,7 @@ void delete_file(void)
   else
     fail(r.ax);
 #else
-#warning delete_file() not implemnted
+#warning delete_file() not implemented
   consolef("DELETE_FILE \"%ls\"\n", filename_ptr1);
   fail(DOSERR_ACCESS_DENIED);
   return;
@@ -1000,7 +1034,6 @@ void open_extended(void)
 
 #ifdef DIRECT_DRIVE
   *srch_attr_ptr = 0x3f;
-  // FIXME - replace with ram_stat()
   find_first();
   if ((r.flags & FCARRY) && (r.ax != DOSERR_FILE_NOT_FOUND))
     return;
@@ -1076,7 +1109,7 @@ typedef void (*PROC)(void);
 
 PROC dispatch_table[] = {
   inquiry,              /* 0x00h */
-  rename_dir,           /* 0x01h */
+  remove_dir,           /* 0x01h */
   unsupported,          /* 0x02h */
   make_dir,             /* 0x03h */
   unsupported,          /* 0x04h */

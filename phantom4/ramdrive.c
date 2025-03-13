@@ -561,7 +561,7 @@ int ram_open(char far *path, int flags)
   if (!sep)
     return -1;
   fcbitize(fh->fcb_name, sep+1);
-  
+
   if (flags != O_WRONLY) {
     fh->dir_sector = 0xffff;
     if ((sep = _fstrrchr(path, '\\')))
@@ -628,7 +628,7 @@ int ram_read(int fd, void far *buf, uint16_t count)
 
   if (!count)
     return count;
-  
+
   near_count = count;
   read_data(&fh->pos, &near_count, (uint8_t far *) buf,
              fh->start_sector, &fh->rel_sector, &fh->abs_sector);
@@ -685,7 +685,7 @@ int ram_opendir(char far *name)
   memset(dh, 0, sizeof(*dh));
   if (!get_dir_start_sector(name, &dh->sector))
     return -1;
-  
+
   dh->index = -1;
   dh->is_open = 1;
   return idx;
@@ -712,7 +712,7 @@ DIRREC_PTR ram_readdir(int dirp)
   dh = &dir_handles[dirp];
   if (!dh->is_open)
     return NULL;
-  
+
   if (!find_next_entry("???????????", 0x3F, NULL, NULL, NULL, NULL, NULL,
 		       &dh->sector, &dh->index))
     return NULL;
@@ -747,25 +747,24 @@ int ram_mkdir(char far *path)
   else
     sep = path;
   fcbitize(temp_fcb, sep);
-  if ((!put_sector(start_sector, sector_buffer)) ||
-      (!create_dir_entry(&dir_sector, NULL, temp_fcb, 0x10,
-                         start_sector, 0, dos_ftime())))
+  if (!put_sector(start_sector, sector_buffer)
+      || !create_dir_entry(&dir_sector, NULL, temp_fcb, 0x10, start_sector, 0, dos_ftime()))
     return -1;
 
   return 0;
 }
 
-int ram_stat(char far *path, DIRREC_PTR dirrec)
+int ram_search(char far *path, DIRREC_PTR dirrec,
+	       uint16_t far *dir_sector, uint16_t far *index)
 {
-  uint16_t dir_sector = -1;
-  uint16_t index = -1;
   int success;
   char far *sep;
 
 
   if ((sep = _fstrrchr(path, '\\')))
     *sep = 0;
-  success = get_dir_start_sector(path, &dir_sector);
+  *dir_sector = -1;
+  success = get_dir_start_sector(path, dir_sector);
   if (sep)
     *sep = '\\';
   if (!success)
@@ -776,13 +775,80 @@ int ram_stat(char far *path, DIRREC_PTR dirrec)
   else
     sep = path;
   fcbitize(temp_fcb, sep);
-  
-  index = -1;
+
+  *index = -1;
   success = find_next_entry(temp_fcb, 0x3F, dirrec->fcb_name, &dirrec->attr,
-			    NULL, NULL, NULL, &dir_sector, &index);
-  consolef("RAM_STAT %i \"%ls\"\n", success, path);
+			    NULL, NULL, NULL, dir_sector, index);
   if (!success)
     return -1;
+  return 0;
+}
+
+int ram_stat(char far *path, DIRREC_PTR dirrec)
+{
+  uint16_t index, dir_sector;
+
+
+  return ram_search(path, dirrec, &dir_sector, &index);
+}
+
+int ram_rmdir(char far *path)
+{
+  uint16_t sector, index;
+  DIRREC ent;
+
+
+  if (ram_search(path, &ent, &sector, &index)) {
+    // Doesn't exist
+    return -1;
+  }
+
+  if (!(ent.attr & ATTR_DIRECTORY))
+    return -1;
+  if (!get_sector(sector, sector_buffer))
+    return -1;
+
+  ((DIRREC_PTR) sector_buffer)[index].fcb_name[0] = (char) 0xE5;
+
+  if (!put_sector(sector, sector_buffer))
+    return -1;
+
+  FREE_SECTOR_CHAIN(ent.start_sector);
+  return 0;
+}
+
+int ram_rename(char far *old_path, char far *new_path)
+{
+  uint16_t old_sector, old_index, new_sector, new_index;
+  DIRREC old_ent, new_ent;
+  int err;
+  char far *sep;
+
+
+  ram_search(old_path, &old_ent, &old_sector, &old_index);
+  if ((old_ent.attr & ATTR_DIRECTORY))
+    return -1;
+
+  err = ram_search(new_path, &new_ent, &new_sector, &new_index);
+  if (!err) {
+    // FIXME - delete existing first?
+    return -1;
+  }
+
+  sep = _fstrrchr(new_path, '\\') + 1;
+  fcbitize(temp_fcb, sep);
+  if (!create_dir_entry(&old_sector, NULL, temp_fcb,
+			old_ent.attr, old_ent.start_sector,
+			old_ent.size, old_ent.datetime))
+    return -1;
+
+  if (!get_sector(old_sector, sector_buffer))
+    return -1;
+
+  ((DIRREC_PTR) sector_buffer)[old_index].fcb_name[0] = (char) 0xE5;
+  if (!put_sector(old_sector, sector_buffer))
+    return -1;
+
   return 0;
 }
 
