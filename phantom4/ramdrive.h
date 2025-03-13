@@ -51,6 +51,7 @@ extern int ram_mkdir(char far *path);
 extern int ram_stat(char far *path, DIRREC_PTR dirrec);
 extern int ram_rmdir(char far *path);
 extern int ram_rename(char far *old_path, char far *new_path);
+extern int ram_unlink(char far *path);
 #endif
 
 #endif /* _RAMDRIVE_H */

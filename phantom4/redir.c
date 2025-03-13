@@ -818,10 +818,11 @@ void delete_file(void)
   else
     fail(r.ax);
 #else
-#warning delete_file() not implemented
-  consolef("DELETE_FILE \"%ls\"\n", filename_ptr1);
-  fail(DOSERR_ACCESS_DENIED);
-  return;
+  if (ram_unlink(filename_ptr1)) {
+    fail(DOSERR_ACCESS_DENIED);
+    return;
+  }
+  succeed();
 #endif
 }
 

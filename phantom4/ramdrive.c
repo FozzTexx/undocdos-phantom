@@ -852,4 +852,26 @@ int ram_rename(char far *old_path, char far *new_path)
   return 0;
 }
 
+int ram_unlink(char far *path)
+{
+  uint16_t sector, index;
+  DIRREC ent;
+
+
+  if (ram_search(path, &ent, &sector, &index)) {
+    // Doesn't exist
+    return -1;
+  }
+
+  if (ent.attr & 1)
+    return -1;
+
+  FREE_SECTOR_CHAIN(ent.start_sector);
+  ((DIRREC_PTR) sector_buffer)[index].fcb_name[0] = (char) 0xE5;
+  if (!put_sector(sector, sector_buffer))
+    return -1;
+
+  return 0;
+}
+
 #endif
